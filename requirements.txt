@@ -1,0 +1,15 @@
+# DialMouse dependencies
+#
+# Runtime (bundled into the per-OS binaries at packaging time, Step 6):
+pynput>=1.7.6          # cross-platform mouse injection (used from Step 1)
+python-osc>=1.8.0      # OSC receive over UDP (Receiver mode, added in Step 3)
+screeninfo>=0.8.1      # per-monitor enumeration (confinement, added in Step 2)
+
+# Optional (Direct HID mode, Step 5 — nice-to-have):
+# hidapi>=0.14.0
+
+# Notes:
+#   * On Linux, pynput pulls in python-xlib for the X11 backend.
+#   * The OFFLINE / no-internet requirement applies to the SHIPPED binaries,
+#     which embed these libraries via PyInstaller. Installing from this file is
+#     only for source-based development on your dev machine.

@@ -1,0 +1,39 @@
+{
+  "mode": "receiver",
+  "click_mode": "hold",
+  "network": {
+    "host": "127.0.0.1",
+    "port": 12000,
+    "max_events_per_sec": 5000
+  },
+  "movement": {
+    "pixels_per_tick": 6,
+    "invert_x": false,
+    "invert_y": false,
+    "acceleration": {
+      "enabled": true,
+      "window_ms": 40,
+      "max_factor": 4.0
+    },
+    "scroll": {
+      "lines_per_tick": 1,
+      "invert": false
+    }
+  },
+  "confine": {
+    "default_on": false,
+    "minimon": {
+      "match": "name",
+      "name": "\\\\.\\DISPLAY4",
+      "width": 1920,
+      "height": 1080,
+      "index": 2
+    }
+  },
+  "watchdog": {
+    "enabled": true,
+    "timeout_s": 5.0
+  },
+  "keyboard": {},
+  "display": {}
+}
