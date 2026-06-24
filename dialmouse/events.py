@@ -46,12 +46,19 @@ class EventCore:
         confine: ConfineController,
         enabled: bool = True,
         logger: Optional[logging.Logger] = None,
+        keyboard=None,
     ) -> None:
         self._movement = movement
         self._backend = backend
         self._confine = confine
         self._enabled = enabled
         self._log = logger or get_logger()
+        # Keyboard controller (Step 4). Optional so existing call sites and tests
+        # that only exercise the mouse path keep working.
+        self._keyboard = keyboard
+        # Drag-lock: when latched, the left button is held down until toggled off
+        # so you can drag long distances without holding a dial.
+        self._drag_locked = False
 
     @property
     def enabled(self) -> bool:
@@ -96,6 +103,24 @@ class EventCore:
             return
         self._backend.click(name, 1)
 
+    def click_double(self) -> None:
+        if not self._enabled:
+            return
+        self._backend.click("left", 2)
+
+    def draglock_toggle(self) -> None:
+        """Latch the left button down, or release it. Survives across moves."""
+        if not self._enabled:
+            return
+        if self._drag_locked:
+            self._backend.button_up("left")
+            self._drag_locked = False
+            self._log.info("Drag-lock released.")
+        else:
+            self._backend.button_down("left")
+            self._drag_locked = True
+            self._log.info("Drag-lock engaged (left button held).")
+
     # -- sensitivity / scroll speed ---------------------------------------
 
     def adjust_sensitivity(self, delta: int) -> None:
@@ -106,10 +131,65 @@ class EventCore:
         v = self._movement.adjust_scroll_speed(int(delta))
         self._log.info("Scroll speed: %d lines/tick.", v)
 
+    def sensitivity_preset(self, n: int) -> None:
+        v = self._movement.set_sensitivity_preset(int(n))
+        self._log.info("Sensitivity preset %d -> %d px/tick.", int(n), v)
+
+    def set_precision(self, on: bool) -> None:
+        self._movement.set_precision(bool(on))
+        self._log.debug("Precision mode %s.", "on" if on else "off")
+
+    def set_turbo(self, on: bool) -> None:
+        self._movement.set_turbo(bool(on))
+        self._log.debug("Turbo mode %s.", "on" if on else "off")
+
+    # -- keyboard (Step 4) -------------------------------------------------
+
+    def key_tap(self, name: str) -> None:
+        if not self._enabled or self._keyboard is None:
+            return
+        self._keyboard.tap(name)
+
+    def key_down(self, name: str) -> None:
+        if not self._enabled or self._keyboard is None:
+            return
+        self._keyboard.key_down(name)
+
+    def key_up(self, name: str) -> None:
+        if not self._enabled or self._keyboard is None:
+            return
+        self._keyboard.key_up(name)
+
+    def key_type(self, text: str) -> None:
+        if not self._enabled or self._keyboard is None:
+            return
+        self._keyboard.type_text(text)
+
+    def key_mod_toggle(self, name: str) -> None:
+        # Allowed even when paused: it only flips internal latch state and
+        # injects nothing, so the shift indicator stays usable.
+        if self._keyboard is None:
+            return
+        self._keyboard.mod_toggle(name)
+
+    def key_snippet(self, n: int) -> None:
+        if not self._enabled or self._keyboard is None:
+            return
+        self._keyboard.snippet(int(n))
+
     # -- control (pause / resume) -----------------------------------------
 
     def set_enabled(self, enabled: bool) -> None:
         self._enabled = bool(enabled)
+        # Safety: if we are pausing while drag-lock holds the left button down,
+        # release it so the button can never be stranded by the kill-switch.
+        if not self._enabled and self._drag_locked:
+            try:
+                self._backend.button_up("left")
+            except Exception as exc:  # pragma: no cover - injection guard
+                self._log.debug("Drag-lock release on pause skipped: %s", exc)
+            self._drag_locked = False
+            self._log.info("Drag-lock released by pause.")
         self._log.info("DialMouse %s.", "resumed" if self._enabled else "paused (dials pass through)")
 
     def toggle_enabled(self) -> None:

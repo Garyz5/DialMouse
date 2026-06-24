@@ -4,3 +4,4 @@ __pycache__/
 dialmouse.log*
 dist/
 build/
+.venv/

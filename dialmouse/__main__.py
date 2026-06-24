@@ -4,12 +4,12 @@ Default action (no flags) RUNS THE RECEIVER: it listens on localhost for OSC/UDP
 from Companion and drives the cursor. Other actions:
 
     python -m dialmouse                       # run the receiver (Receiver mode)
-    python -m dialmouse --loopback-test       # prove OSC -> cursor without Companion
+    python -m dialmouse --loopback-test [--duration 15]   # OSC -> cursor, no Companion
     python -m dialmouse --make-config
     python -m dialmouse --list-monitors
     python -m dialmouse --identify
     python -m dialmouse --set-minimon N
-    python -m dialmouse --test [--confine] [--monitor N]
+    python -m dialmouse --test [--confine] [--monitor N] [--duration 15]
     python -m dialmouse --version
 """
 
@@ -44,6 +44,8 @@ from .config import (
 from .confine import ConfineController
 from .events import EventCore
 from .identify import show_identify
+from .keyboard import KeyboardController
+from .keyboard_backend import KeyboardBackend
 from .logsetup import setup_logging
 from .monitors import enumerate_monitors, monitor_by_index, pick_minimon
 from .mouse_backend import DialMouseInjectionError, MouseBackend
@@ -72,6 +74,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--monitor", type=int, default=None, metavar="N", help="with --test: target monitor N")
     p.add_argument("--loopback-test", action="store_true",
                    help="run the receiver and send it scripted OSC; cursor should move")
+    p.add_argument("--duration", type=float, default=15.0, metavar="SECONDS",
+                   help="how long --test / --loopback-test run so you can observe "
+                        "(default 15; use 0 for a single pass)")
     p.add_argument("--no-watchdog", action="store_true")
     p.add_argument("--log-dir", type=Path, default=None, metavar="DIR")
     return p
@@ -100,15 +105,19 @@ def _movement_from_config(cfg) -> MovementModel:
         accel_enabled=m.accel.enabled, accel_window_ms=m.accel.window_ms,
         accel_max=m.accel.max_factor,
         scroll_lines_per_tick=m.scroll.lines_per_tick, scroll_invert=m.scroll.invert,
+        precision_factor=m.precision_factor, turbo_factor=m.turbo_factor,
+        sensitivity_presets=m.sensitivity_presets,
     )
 
 
 def _build_runtime(config, logger):
-    """Construct movement model, confinement, backend, and event core."""
+    """Construct movement model, confinement, backends, keyboard, event core."""
     movement = _movement_from_config(config)
     confine = ConfineController(config.confine)
     backend = MouseBackend(logger=logger, region_provider=confine.active_region)
-    core = EventCore(movement, backend, confine, enabled=True, logger=logger)
+    kb_backend = KeyboardBackend(logger=logger)
+    keyboard = KeyboardController(kb_backend, snippets=config.keyboard.snippets, logger=logger)
+    core = EventCore(movement, backend, confine, enabled=True, logger=logger, keyboard=keyboard)
     return movement, confine, backend, core
 
 
@@ -172,8 +181,13 @@ def _send_osc(sock, host, port, address, *args):
     sock.sendto(b.build().dgram, (host, port))
 
 
-def _cmd_loopback_test(logger, config, port, watchdog) -> int:
-    """Start the receiver and send it scripted OSC; the cursor should move."""
+def _cmd_loopback_test(logger, config, port, watchdog, duration) -> int:
+    """Start the receiver and send it scripted OSC; the cursor should move.
+
+    Loops the scripted square for ``duration`` seconds (default 15) so there's
+    time to watch and poke, beating the watchdog throughout so a long, healthy
+    run is never mistaken for a hang.
+    """
     movement, confine, backend, core = _build_runtime(config, logger)
     try:
         backend.preflight()  # fail fast with clear guidance if no display/perm
@@ -192,25 +206,45 @@ def _cmd_loopback_test(logger, config, port, watchdog) -> int:
 
     host = config.network.host
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    logger.info("Loopback test: sending scripted OSC; watch the cursor.")
+    deadline = time.monotonic() + max(0.0, float(duration))
+    logger.info("Loopback test: sending scripted OSC for %.0fs; watch the cursor.",
+                max(0.0, float(duration)))
+
+    def beat():
+        if watchdog:
+            watchdog.beat()
+
     try:
-        # A square via move ticks (sensitivity from config), a click, a scroll.
-        for _ in range(20):
-            _send_osc(s, host, port, P.MOVE_X, 1); time.sleep(0.01)
-        for _ in range(20):
-            _send_osc(s, host, port, P.MOVE_Y, 1); time.sleep(0.01)
-        for _ in range(20):
-            _send_osc(s, host, port, P.MOVE_X, -1); time.sleep(0.01)
-        for _ in range(20):
-            _send_osc(s, host, port, P.MOVE_Y, -1); time.sleep(0.01)
-        time.sleep(0.1)
+        passes = 0
+        # Always run at least one full pass; repeat until the deadline.
+        while True:
+            for _ in range(20):
+                _send_osc(s, host, port, P.MOVE_X, 1); beat(); time.sleep(0.01)
+            for _ in range(20):
+                _send_osc(s, host, port, P.MOVE_Y, 1); beat(); time.sleep(0.01)
+            for _ in range(20):
+                _send_osc(s, host, port, P.MOVE_X, -1); beat(); time.sleep(0.01)
+            for _ in range(20):
+                _send_osc(s, host, port, P.MOVE_Y, -1); beat(); time.sleep(0.01)
+            passes += 1
+            if time.monotonic() >= deadline:
+                break
+        # One click + one scroll at the very end (kept out of the loop so we
+        # don't spam clicks on whatever is under the cursor while you watch).
+        time.sleep(0.1); beat()
         _send_osc(s, host, port, P.CLICK_LEFT)
-        time.sleep(0.1)
+        time.sleep(0.1); beat()
         _send_osc(s, host, port, P.SCROLL, -2)
-        time.sleep(0.3)
+        time.sleep(0.2); beat()
+        logger.info("Sent %d square pass(es).", passes)
     finally:
+        # Pause the watchdog BEFORE tearing down: the receiver thread stops
+        # beating once we stop it, and we must not be force-killed mid-shutdown.
+        if watchdog:
+            watchdog.pause()
         s.close()
         rx.stop()
+        t.join(timeout=1.0)
     logger.info("Loopback test complete: OSC -> cursor pipeline works.")
     return EXIT_OK
 
@@ -297,13 +331,21 @@ def main(argv=None) -> int:
                 confine.enable()
             backend = MouseBackend(logger=logger, region_provider=confine.active_region)
             start_at = confine.park_target() if (confine.is_confined or args.monitor is not None) else None
-            backend.self_test(heartbeat=(watchdog.beat if watchdog else None),
-                              start_at=start_at, demo_bounds=confine.is_confined)
-            logger.info("Self-test passed. Injection works on this machine.")
+            deadline = time.monotonic() + max(0.0, args.duration)
+            passes = 0
+            while True:
+                backend.self_test(heartbeat=(watchdog.beat if watchdog else None),
+                                  start_at=start_at, demo_bounds=confine.is_confined)
+                passes += 1
+                if watchdog:
+                    watchdog.beat()
+                if time.monotonic() >= deadline:
+                    break
+            logger.info("Self-test passed (%d pass(es)). Injection works on this machine.", passes)
             return EXIT_OK
 
         if args.loopback_test:
-            return _cmd_loopback_test(logger, config, port, watchdog)
+            return _cmd_loopback_test(logger, config, port, watchdog, args.duration)
 
         # Default: run the receiver.
         return _cmd_run_receiver(logger, config, port, watchdog)
@@ -321,6 +363,8 @@ def main(argv=None) -> int:
         return EXIT_ERROR
     finally:
         if watchdog is not None:
+            # Pause before stop so nothing can be force-killed during teardown.
+            watchdog.pause()
             watchdog.stop()
 
 

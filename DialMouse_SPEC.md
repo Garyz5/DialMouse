@@ -11,8 +11,12 @@ build log.
 > The Project stores it; I rewrite it on request. At the end of each build step
 > I update the Build Log and hand you a fresh copy.
 
-- **Document version:** v0.6 (Step 3 complete)
-- **Last updated:** 2026-06-21
+- **Document version:** v0.8 (Step 4 built: keyboard back-end + control surface; pending hardware verify)
+- **Last updated:** 2026-06-24
+- **Source repository:** https://github.com/Garyz5/DialMouse — clone this at the
+  start of each session so the code is in front of us. The verified source is the
+  single source of truth for *code*; this file is the single source of truth for
+  *decisions*.
 
 ---
 
@@ -302,7 +306,7 @@ Each step is independently runnable/testable before the next.
 | 1 | Foundation: logging, hang-watchdog, platform detection, mouse back-end, `--test` | ✅ done, verified on Windows |
 | 2 | Config + movement model (accel/invert) + per-monitor enumeration + **confine/detach engine** | ✅ done |
 | 3 | OSC/UDP receiver + event core (wire pointer/scroll/buttons + confine/detach) | ✅ done |
-| 4 | Keyboard back-end (inject + shift/layer state) + control surface (pause, sensitivity, precision/turbo, drag-lock, snippets) | ☐ |
+| 4 | Keyboard back-end (inject + shift/layer state) + control surface (pause, sensitivity, precision/turbo, drag-lock, snippets) | ✅ built (pending hardware verify) |
 | 5 | Display-control module (extend / mirror-pick / panic) per-OS + return-channel feedback | ☐ |
 | 6 | Direct HID mode (optional) | ☐ |
 | 7 | Packaging: PyInstaller per-OS + GitHub Actions; stage helper tools; USB layout | ☐ |
@@ -320,6 +324,36 @@ Each step is independently runnable/testable before the next.
   Step 4).
 - Monitor-switch granularity beyond mirror-pick (e.g. presets that also
   reposition) — revisit at Step 5.
+
+---
+
+## 10b. Next session (Step 5) — start here
+
+Step 4 is built and unit-verified (62 logic tests). **First, verify Step 4 on
+hardware** (see the checklist in the latest build-log entry), then proceed to
+Step 5.
+
+**Step 5 — Display-control module:**
+1. `extend` / `mirror-pick` / `panic` per-OS. Windows first: CCD API
+   (`SetDisplayConfig` via ctypes) for per-monitor mirror-pick, or staged NirSoft
+   **MultiMonitorTool** (offline-friendly) as a fallback; `DisplaySwitch.exe`
+   numeric args (`2`=duplicate, `3`=extend) for global modes on 24H2.
+2. Wire the reserved OSC: `/dialmouse/display/{arm,pick,extend,preset,panic,
+   identify}`.
+3. The armed mirror-picker UX (press Mirror→, keys 1–N light, tap one).
+4. Begin the OSC **return channel** (DialMouse→Companion) for button feedback:
+   `/display/count`, `/display/armed`, `/confine/state`, `/key/shift/state`.
+   Functions never depend on the lights.
+
+**Carryover notes:**
+- macOS display switching = Quartz `CGConfigureDisplayMirrorOfDisplay` or staged
+  `displayplacer`; Linux/X11 = `xrandr --same-as`; Wayland has no universal tool
+  (documented weak spot).
+- The Step 4 keyboard model is **confirmed**: latched Shift uses software
+  character resolution (types the shifted char, no physical Shift held), while
+  inline combos like `ctrl+c` physically hold the modifier around one tap. No
+  change needed unless a layout other than US-QWERTY is required (then the
+  shifted-symbol map in `keyboard.py` needs a per-layout table).
 
 ---
 
@@ -373,3 +407,37 @@ Each step is independently runnable/testable before the next.
   itself so cursor moves without Companion) and --port. 40 logic tests pass
   total (incl. a real-socket end-to-end loopback). Next: verify on hardware with
   --loopback-test, then wire Companion (the Step 8 guide) to send these addresses.
+
+- **2026-06-24 — Repo established + Step 4 built.** Project pushed to GitHub
+  (https://github.com/Garyz5/DialMouse) so each session can clone the real code
+  instead of starting blind; `.gitignore` added, committed `.pyc` bytecode
+  removed. Step 4 implemented and unit-verified (62 logic tests pass: 11 + 18 +
+  11 Steps 1-3, + 22 new). Delivered:
+  - **Watchdog teardown fix (Step 3 carryover):** the fire decision now
+    re-checks the stop/pause flags right before the irreversible `os._exit`
+    (`_should_fire`), `stop()` pauses first, `main()` pauses the watchdog before
+    teardown, and the loopback sender beats it throughout. No more false-fire on
+    shutdown.
+  - **`--duration SECONDS` (default 15):** `--test` and `--loopback-test` now
+    loop for the duration (use `0` for a single pass) so there's time to observe,
+    beating the watchdog the whole time.
+  - **Keyboard back-end** (`keyboard_backend.py` raw pynput injection +
+    `keyboard.py` shift/layer state machine). DialMouse owns shift state: latched
+    Shift types the shifted character in software (no physical Shift held);
+    inline combos (`ctrl+c`, `shift+tab`) physically hold modifiers around one
+    tap for app shortcuts. Wired OSC `/dialmouse/key/{tap,down,up,type,mod/
+    toggle,snippet}`; same guarded injection error/guidance as the mouse path.
+  - **Control surface:** drag-lock (`/draglock/toggle`, auto-released on pause),
+    precision/turbo holds (`/mode/precision|turbo`), sensitivity presets
+    (`/sensitivity/preset`, config `movement.sensitivity_presets`), double-click
+    (`/click/double`), and config-defined snippets (`keyboard.snippets`). Raw-UDP
+    text grammar extended (`key`, `kdown`, `kup`, `mod`, `type`, `snippet`,
+    `dblclick`, `draglock`, `preset`, `precision on|off`, `turbo on|off`).
+  - Version bumped to 0.4.0; `config.json` + `--make-config` now include the new
+    movement/keyboard fields (backward compatible — old configs still load).
+  **Pending hardware verification (do first next session):** on the Windows rig,
+  run `python -m dialmouse --loopback-test --duration 15` (cursor squares for
+  15s, clean exit, no watchdog kill); then wire a few Companion keys to
+  `/dialmouse/key/tap` + a `⇧Shift` to `/dialmouse/key/mod/toggle shift` and
+  confirm letters/symbols type with correct case, `ctrl+c`/`ctrl+v` work,
+  drag-lock latches the left button, and precision/turbo change pointer speed.

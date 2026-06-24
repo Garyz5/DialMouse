@@ -102,6 +102,9 @@ class Watchdog:
 
     def stop(self) -> None:
         """Stop the watchdog thread cleanly (used on normal shutdown)."""
+        # Pause first: belt-and-braces so even a spurious wakeup between here and
+        # the thread actually exiting can't trip a false hang during teardown.
+        self._paused = True
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=self._check_interval * 2)
@@ -136,12 +139,24 @@ class Watchdog:
 
     # -- internals ---------------------------------------------------------
 
+    def _should_fire(self, elapsed: float) -> bool:
+        """Whether ``elapsed`` represents a real hang worth force-killing for.
+
+        Pure and side-effect-free so it can be unit-tested directly: returns
+        True only when the timeout is exceeded AND we are neither paused nor
+        stopping. The pause/stop checks are what keep normal teardown from
+        being mistaken for a hang.
+        """
+        return (elapsed > self._timeout
+                and not self._paused
+                and not self._stop.is_set())
+
     def _run(self) -> None:
         while not self._stop.wait(self._check_interval):
             if self._paused:
                 continue
             elapsed = time.monotonic() - self._last_beat
-            if elapsed > self._timeout:
+            if self._should_fire(elapsed):
                 # Hand off to the configured handler. The default never returns.
                 self._on_hang(elapsed)
                 return

@@ -48,6 +48,18 @@ class MovementConfig:
     invert_y: bool = False
     accel: AccelConfig = field(default_factory=AccelConfig)
     scroll: ScrollConfig = field(default_factory=ScrollConfig)
+    # Step 4: momentary precision (slow) / turbo (fast) hold factors, and saved
+    # sensitivity presets jumped to by /dialmouse/sensitivity/preset.
+    precision_factor: float = 0.25
+    turbo_factor: float = 3.0
+    sensitivity_presets: list = field(default_factory=lambda: [3, 6, 12])
+
+
+@dataclass
+class KeyboardConfig:
+    # Canned text typed by /dialmouse/key/snippet N (1-based) — Utility-page
+    # Snip1..3. Empty by default so nothing types unexpectedly.
+    snippets: list = field(default_factory=list)
 
 
 @dataclass
@@ -94,8 +106,8 @@ class Config:
     confine: ConfineConfig = field(default_factory=ConfineConfig)
     network: NetworkConfig = field(default_factory=NetworkConfig)
     watchdog: WatchdogConfig = field(default_factory=WatchdogConfig)
+    keyboard: KeyboardConfig = field(default_factory=KeyboardConfig)
     # Passed through untouched for later steps:
-    keyboard: Dict[str, Any] = field(default_factory=dict)
     display: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -158,6 +170,19 @@ def _parse(raw: Dict[str, Any]) -> Config:
         s.get("lines_per_tick", 1), 1, lo=1, hi=50, name="scroll.lines_per_tick"))
     cfg.movement.scroll.invert = _boolean(s.get("invert", False), False, "scroll.invert")
 
+    cfg.movement.precision_factor = _num(
+        m.get("precision_factor", 0.25), 0.25, lo=0.01, hi=1.0, name="movement.precision_factor")
+    cfg.movement.turbo_factor = _num(
+        m.get("turbo_factor", 3.0), 3.0, lo=1.0, hi=20.0, name="movement.turbo_factor")
+    presets = m.get("sensitivity_presets", [3, 6, 12])
+    if not isinstance(presets, list) or not presets:
+        if presets != [3, 6, 12]:
+            get_logger().warning(
+                "config: movement.sensitivity_presets=%r invalid; using [3,6,12].", presets)
+        presets = [3, 6, 12]
+    cfg.movement.sensitivity_presets = [
+        int(_num(p, 6, lo=1, hi=200, name="movement.sensitivity_presets[]")) for p in presets]
+
     c = raw.get("confine", {}) or {}
     cfg.confine.default_on = _boolean(c.get("default_on", False), False, "confine.default_on")
     mm = c.get("minimon", {}) or {}
@@ -188,7 +213,12 @@ def _parse(raw: Dict[str, Any]) -> Config:
     cfg.watchdog.enabled = _boolean(w.get("enabled", True), True, "watchdog.enabled")
     cfg.watchdog.timeout_s = _num(w.get("timeout_s", 5.0), 5.0, lo=0.5, hi=120, name="watchdog.timeout_s")
 
-    cfg.keyboard = raw.get("keyboard", {}) or {}
+    kb = raw.get("keyboard", {}) or {}
+    snippets = kb.get("snippets", [])
+    if not isinstance(snippets, list):
+        get_logger().warning("config: keyboard.snippets=%r is not a list; ignoring.", snippets)
+        snippets = []
+    cfg.keyboard.snippets = [str(x) for x in snippets]
     cfg.display = raw.get("display", {}) or {}
     return cfg
 
@@ -205,13 +235,16 @@ def default_config_dict() -> Dict[str, Any]:
             "invert_y": False,
             "acceleration": {"enabled": True, "window_ms": 40, "max_factor": 4.0},
             "scroll": {"lines_per_tick": 1, "invert": False},
+            "precision_factor": 0.25,
+            "turbo_factor": 3.0,
+            "sensitivity_presets": [3, 6, 12],
         },
         "confine": {
             "default_on": False,
             "minimon": {"match": "resolution", "name": None, "width": 1920, "height": 1080, "index": None},
         },
         "watchdog": {"enabled": True, "timeout_s": 5.0},
-        "keyboard": {},
+        "keyboard": {"snippets": []},
         "display": {},
     }
 

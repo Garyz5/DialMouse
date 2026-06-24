@@ -18,22 +18,31 @@
     "scroll": {
       "lines_per_tick": 1,
       "invert": false
-    }
+    },
+    "precision_factor": 0.25,
+    "turbo_factor": 3.0,
+    "sensitivity_presets": [
+      3,
+      6,
+      12
+    ]
   },
   "confine": {
     "default_on": false,
     "minimon": {
-      "match": "name",
-      "name": "\\\\.\\DISPLAY4",
+      "match": "resolution",
+      "name": null,
       "width": 1920,
       "height": 1080,
-      "index": 2
+      "index": null
     }
   },
   "watchdog": {
     "enabled": true,
     "timeout_s": 5.0
   },
-  "keyboard": {},
+  "keyboard": {
+    "snippets": []
+  },
   "display": {}
 }

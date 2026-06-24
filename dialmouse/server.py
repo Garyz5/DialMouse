@@ -48,6 +48,12 @@ def _first_int(args: List, default: Optional[int] = None) -> Optional[int]:
         return default
 
 
+def _first_str(args: List, default: str = "") -> str:
+    if not args:
+        return default
+    return str(args[0])
+
+
 class UdpReceiver:
     def __init__(
         self,
@@ -90,14 +96,25 @@ class UdpReceiver:
             P.CLICK_LEFT: lambda a: c.click("left"),
             P.CLICK_RIGHT: lambda a: c.click("right"),
             P.CLICK_MIDDLE: lambda a: c.click("middle"),
+            P.CLICK_DOUBLE: lambda a: c.click_double(),
+            P.DRAGLOCK_TOGGLE: lambda a: c.draglock_toggle(),
             P.SENSITIVITY: lambda a: c.adjust_sensitivity(_first_int(a, 0)),
+            P.SENSITIVITY_PRESET: lambda a: c.sensitivity_preset(_first_int(a, 1)),
             P.SCROLLSPEED: lambda a: c.adjust_scroll_speed(_first_int(a, 0)),
             P.CONTROL_ENABLED: lambda a: c.set_enabled(bool(_first_int(a, 1))),
             P.CONTROL_TOGGLE: lambda a: c.toggle_enabled(),
+            P.MODE_PRECISION: lambda a: c.set_precision(bool(_first_int(a, 0))),
+            P.MODE_TURBO: lambda a: c.set_turbo(bool(_first_int(a, 0))),
             P.CONFINE_MINIMON: lambda a: c.confine_minimon(),
             P.CONFINE_OFF: lambda a: c.confine_off(),
             P.CONFINE_TOGGLE: lambda a: c.confine_toggle(),
             P.CURSOR_PARK: lambda a: c.park(),
+            P.KEY_TAP: lambda a: c.key_tap(_first_str(a)),
+            P.KEY_DOWN: lambda a: c.key_down(_first_str(a)),
+            P.KEY_UP: lambda a: c.key_up(_first_str(a)),
+            P.KEY_TYPE: lambda a: c.key_type(_first_str(a)),
+            P.KEY_MOD_TOGGLE: lambda a: c.key_mod_toggle(_first_str(a)),
+            P.KEY_SNIPPET: lambda a: c.key_snippet(_first_int(a, 0)),
         }
 
     # -- lifecycle ---------------------------------------------------------
@@ -226,6 +243,10 @@ class UdpReceiver:
         if head == "click" and rest:
             addr = {"left": P.CLICK_LEFT, "right": P.CLICK_RIGHT, "middle": P.CLICK_MIDDLE}.get(rest[0].lower())
             return (addr, []) if addr else None
+        if head == "dblclick":
+            return P.CLICK_DOUBLE, []
+        if head == "draglock":
+            return P.DRAGLOCK_TOGGLE, []
         if head == "confine" and rest:
             opt = rest[0].lower()
             return {"on": (P.CONFINE_MINIMON, []), "off": (P.CONFINE_OFF, []),
@@ -242,6 +263,24 @@ class UdpReceiver:
             return P.SENSITIVITY, [as_int()]
         if head == "scrollspeed":
             return P.SCROLLSPEED, [as_int()]
+        if head == "preset":
+            return P.SENSITIVITY_PRESET, [as_int(1)]
+        if head in ("precision", "turbo") and rest:
+            on = 1 if rest[0].lower() in ("on", "1", "true") else 0
+            return (P.MODE_PRECISION if head == "precision" else P.MODE_TURBO), [on]
+        if head == "key" and rest:
+            return P.KEY_TAP, [rest[0]]
+        if head == "kdown" and rest:
+            return P.KEY_DOWN, [rest[0]]
+        if head == "kup" and rest:
+            return P.KEY_UP, [rest[0]]
+        if head == "mod" and rest:
+            return P.KEY_MOD_TOGGLE, [rest[0]]
+        if head == "snippet":
+            return P.KEY_SNIPPET, [as_int()]
+        if head == "type":
+            # Everything after "type " is typed literally (preserve spacing).
+            return P.KEY_TYPE, [line[len("type"):].strip()]
         return None
 
     def _dispatch_address(self, address: str, args: List) -> None:

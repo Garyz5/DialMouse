@@ -21,6 +21,7 @@ max_factor for back-to-back ticks.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import List, Optional
 
 AXIS_X = "x"
 AXIS_Y = "y"
@@ -45,6 +46,9 @@ class MovementModel:
         accel_max: float = 4.0,
         scroll_lines_per_tick: int = 1,
         scroll_invert: bool = False,
+        precision_factor: float = 0.25,
+        turbo_factor: float = 3.0,
+        sensitivity_presets: Optional[List[int]] = None,
     ) -> None:
         self.pixels_per_tick = max(1, int(pixels_per_tick))
         self.invert_x = bool(invert_x)
@@ -54,6 +58,15 @@ class MovementModel:
         self.accel_max = max(1.0, float(accel_max))
         self.scroll_lines_per_tick = max(1, int(scroll_lines_per_tick))
         self.scroll_invert = bool(scroll_invert)
+        # Precision (slow) / turbo (fast) are momentary holds (Companion press =
+        # on, release = off). They scale the per-tick pixel step without
+        # touching the stored pixels_per_tick, so releasing returns to normal.
+        self.precision_factor = max(0.01, float(precision_factor))
+        self.turbo_factor = max(1.0, float(turbo_factor))
+        self.sensitivity_presets = [max(1, min(200, int(p)))
+                                    for p in (sensitivity_presets or [3, 6, 12])]
+        self._precision = False
+        self._turbo = False
         self._state = MovementState()
 
     # -- runtime adjustment (dials 4/5 will drive these in a later step) ----
@@ -65,6 +78,31 @@ class MovementModel:
     def adjust_scroll_speed(self, delta: int) -> int:
         self.scroll_lines_per_tick = max(1, min(50, self.scroll_lines_per_tick + int(delta)))
         return self.scroll_lines_per_tick
+
+    def set_precision(self, on: bool) -> None:
+        """Momentary precision (slow) hold. Turbo wins if both are somehow on."""
+        self._precision = bool(on)
+
+    def set_turbo(self, on: bool) -> None:
+        """Momentary turbo (fast) hold."""
+        self._turbo = bool(on)
+
+    def set_sensitivity_preset(self, n: int) -> int:
+        """Jump pixels_per_tick to saved preset ``n`` (1-based). Clamped/ignored
+        if out of range. Returns the resulting pixels_per_tick."""
+        idx = int(n) - 1
+        if 0 <= idx < len(self.sensitivity_presets):
+            self.pixels_per_tick = self.sensitivity_presets[idx]
+        return self.pixels_per_tick
+
+    def _mode_factor(self) -> float:
+        # Turbo takes priority over precision if both flags are set, so a stuck
+        # precision hold can always be overridden by pressing turbo.
+        if self._turbo:
+            return self.turbo_factor
+        if self._precision:
+            return self.precision_factor
+        return 1.0
 
     # -- core translation ---------------------------------------------------
 
@@ -92,7 +130,7 @@ class MovementModel:
 
         factor = self._accel_factor(now - last)
         signed = -ticks if invert else ticks
-        pixels = signed * self.pixels_per_tick * factor
+        pixels = signed * self.pixels_per_tick * factor * self._mode_factor()
         # Never let a non-zero tick round down to no motion.
         result = int(round(pixels))
         if result == 0:
