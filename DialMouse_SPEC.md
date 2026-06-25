@@ -11,7 +11,7 @@ build log.
 > The Project stores it; I rewrite it on request. At the end of each build step
 > I update the Build Log and hand you a fresh copy.
 
-- **Document version:** v0.10 (Step 6 built: Direct HID mode; pending hardware verify)
+- **Document version:** v0.11 (Step 7 built: PyInstaller packaging + offline USB layout; pending hardware verify)
 - **Last updated:** 2026-06-24
 - **Source repository:** https://github.com/Garyz5/DialMouse — clone this at the
   start of each session so the code is in front of us. The verified source is the
@@ -309,7 +309,7 @@ Each step is independently runnable/testable before the next.
 | 4 | Keyboard back-end (inject + shift/layer state) + control surface (pause, sensitivity, precision/turbo, drag-lock, snippets) | ✅ built (pending hardware verify) |
 | 5 | Display-control module (extend / mirror-pick / panic) per-OS + return-channel feedback | ✅ built (pending hardware verify) |
 | 6 | Direct HID mode (optional) | ✅ built (pending hardware verify) |
-| 7 | Packaging: PyInstaller per-OS + GitHub Actions; stage helper tools; USB layout | ☐ |
+| 7 | Packaging: PyInstaller per-OS + GitHub Actions; stage helper tools; USB layout | ✅ built (pending hardware verify) |
 | 8 | Docs: full single-/multi-page Companion setup guide + README + importable Companion config if feasible | ☐ |
 
 ---
@@ -327,37 +327,47 @@ Each step is independently runnable/testable before the next.
 
 ---
 
-## 10b. Next session (Step 7 or 8) — start here
+## 10b. Next session (Step 8) — start here
 
-Step 6 is built and unit-verified (91 logic tests). **First, verify Step 6 on
-hardware** (checklist in the latest build-log entry) — close Companion, then
-`--hid-test` to confirm the deck opens and which dial index is which, then `--hid`
-to drive the cursor. Then choose:
+Step 7 is built and verified in-container: a real PyInstaller one-file binary
+builds and runs self-contained (no system Python, `env -i` clean), and the build
+script assembles the offline USB layout end-to-end. 91 logic tests pass.
 
-- **Step 7 — Packaging:** PyInstaller per-OS one-file binaries + a GitHub Actions
-  workflow building all three; bundle the HID backend (hidapi) and stage helper
-  tools (MultiMonitorTool); lay out the USB drive (`/DialMouse/bin/...`, launch
-  scripts, `config.example.json`, README). This is what makes it the offline
-  carry-between-gigs tool.
-- **Step 8 — Docs:** the full Companion setup guide (per-dial OSC action table +
-  the QWERTY/Utility page build) + README (per-OS quick start, permissions,
-  config reference, troubleshooting) + an importable Companion config if feasible.
+**First, run the Step 7 offline acceptance test on Windows hardware** (the test
+that actually proves the core requirement). On the dev box:
+`packaging\build-windows.ps1` -> `dist\USB\DialMouse\`. Copy that folder to a
+machine / clean account with **no Python and no network** and confirm:
+`start-windows.bat --test` (square+click), then no-args (receiver binds
+127.0.0.1:12000), then `--hid-test` with the bundled `hidapi.dll` (deck opens).
+If all pass offline, the USB requirement is met. (HID still depends on whether
+the library recognizes the Plus XL — Step 6's open question.)
 
-**Direct HID reality (Step 6 as built):**
-- Built on the cross-platform `python-elgato-streamdeck` library (guarded,
-  OPTIONAL import): dial turn/press + keys + touch decoded for us. If the library
-  or a HID backend is missing, Receiver mode still works; only `--hid` is
-  unavailable, with per-OS guidance.
-- The dial map is config-driven (`hid.dials`, `hid.invert`) and matches the spec
-  defaults; the translator (`hid_map.py`) is pure and fully unit-tested with a
-  mock core, so HID and Receiver mode drive the SAME event core identically.
-- `--hid-test` opens the deck and prints dial/key/touch events WITHOUT injecting,
-  for hardware discovery (which index is which dial, turn direction). `--hid` (or
-  `mode: "hid"`) drives the cursor for real.
-- HID access is exclusive: Companion and Direct HID cannot hold the deck at once.
-- **Unknown:** whether the library recognizes this exact "Plus XL" (36 keys / 6
-  dials / touch) device. `--hid-test` will reveal what it enumerates; if it
-  doesn't recognize the device, Receiver mode (already verified) remains primary.
+Then **Step 8 — Docs / Companion guide:**
+- The full Bitfocus Companion setup guide: per-dial OSC action table (the exact
+  OSC paths each dial turn/press should send) + how to build the Main QWERTY +
+  Utility pages, with DialMouse owning shift/layer state.
+- If feasible, an importable Companion config (`.companionconfig`) so the page
+  layout doesn't have to be hand-built.
+- README is already packaging-focused (offline quick start, USB layout, command
+  table, permissions, acceptance test); Step 8 adds the Companion wiring detail.
+
+**Packaging facts (Step 7 as built):**
+- `dialmouse.spec` — one-file, console, per-OS. `collect_submodules` for
+  pynput/screeninfo/pythonosc; ALL pynput backends (`_win32/_darwin/_xorg/
+  _uinput`) listed explicitly (caught a real gap: `_xorg` was being dropped).
+  StreamDeck/hid bundled if present (optional). Bundles the native HIDAPI lib
+  (`hidapi.dll` / `libhidapi.dylib` / `libhidapi-libusb.so`) when staged next to
+  the spec, so Direct HID runs offline from the binary.
+- `__main__._bootstrap_frozen_dll_path()` — when frozen on Windows, adds the
+  bundle dir + exe dir to the DLL search path so the bundled `hidapi.dll` loads
+  with no manual step. No-op from source.
+- `packaging/build-{windows.ps1,linux.sh,macos.sh}` — stage HIDAPI, build, and
+  assemble `dist/USB/DialMouse/` (bin/, tools/, config.example.json, launcher,
+  README). `packaging/usb/start-*.{bat,sh,command}` — cd to root, seed
+  config.json from the example on first run, run `bin/dialmouse-<os>`.
+- `.github/workflows/build.yml` — matrix build (windows/ubuntu/macos), runs the
+  test suite, stages HIDAPI per-OS, PyInstaller, uploads per-OS artifacts.
+- You cannot cross-build; each OS binary is built on its own runner/host.
 
 ---
 
@@ -529,3 +539,43 @@ to drive the cursor. Then choose:
   dial 1 moves the cursor vertically, dial 2 horizontally, dial 3 scrolls, presses
   fire L/R/M, and dial 6 press pauses/resumes. If the library doesn't recognize
   the device, say so — Receiver mode stays primary.
+
+- **2026-06-24 — Step 7 built (packaging / offline USB).** v0.11. This is the
+  step that delivers the core requirement: run offline from a USB stick on a
+  fresh OS with no Python and no internet. Verified in-container by actually
+  building and running a one-file binary.
+  - **`dialmouse.spec`** (PyInstaller, one-file, console, per-OS). Collects
+    pynput/screeninfo/pythonosc submodules; lists ALL pynput input backends
+    explicitly — packaging caught a real gap where `pynput.keyboard._xorg` was
+    dropped, which would have broken the Linux binary. Bundles StreamDeck/hid if
+    installed (optional) and the native HIDAPI library (`hidapi.dll` etc.) when
+    staged next to the spec, so Direct HID works offline from the binary.
+  - **`__main__._bootstrap_frozen_dll_path()`** — when frozen on Windows, adds
+    the bundle + exe dirs to the DLL search path so the bundled `hidapi.dll`
+    loads with no manual step (the library's search list includes `./hidapi.dll`
+    and bare `hidapi.dll`). Safe no-op from source; doesn't touch the 91 tests.
+  - **Build scripts** `packaging/build-{windows.ps1,linux.sh,macos.sh}`: install
+    deps, stage HIDAPI (Windows downloads the official libusb `hidapi-win.zip`),
+    build, and assemble `dist/USB/DialMouse/` (bin/, tools/, config.example.json,
+    launcher, README). **Launchers** `packaging/usb/start-*`: cd to the DialMouse
+    root, seed `config.json` from `config.example.json` on first run, run
+    `bin/dialmouse-<os>`.
+  - **CI** `.github/workflows/build.yml`: native matrix (windows/ubuntu/macos),
+    runs the full test suite, stages HIDAPI per-OS, PyInstaller, uploads per-OS
+    binaries as artifacts (manual dispatch or `v*` tag).
+  - **README** rewritten for the USB story: offline quick start, USB layout,
+    command table, per-OS permissions, Direct HID + mirror-pick notes, and a
+    concrete 5-step **offline acceptance test**. `.gitignore` now excludes build
+    artifacts (`hidapi.dll`, `hidapi-win/`, `libhidapi*`, `*.zip`, `out/`).
+  - **In-container verification:** `pyinstaller dialmouse.spec` produced a 33 MB
+    self-contained `dist/dialmouse`; it ran `--version`, `--make-config`,
+    `--display status`, and `--hid-test` (graceful — StreamDeck bundled, only the
+    native lib absent on this host), and ran under `env -i` with no system deps.
+    After the backend fix the headless error became the expected "no X display"
+    rather than a missing module. The build script assembled the USB layout and
+    the launcher seeded config + ran the binary end-to-end.
+  **Pending hardware verification (the real proof, do first next session):** on
+  Windows run `packaging\build-windows.ps1`, copy `dist\USB\DialMouse\` to a
+  machine/account with NO Python and NO network, and run the README's 5-step
+  offline acceptance test (`--test`, receiver, Companion dials, then `--hid-test`
+  with the bundled DLL). That confirms the offline/USB requirement on real metal.

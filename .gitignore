@@ -6,3 +6,9 @@ dist/
 build/
 .venv/
 config.json
+hidapi.dll
+hidapi-win/
+libhidapi*.so
+libhidapi*.dylib
+*.zip
+out/

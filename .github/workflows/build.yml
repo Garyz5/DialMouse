@@ -1,0 +1,86 @@
+name: build
+
+# Build the per-OS DialMouse binaries (you cannot cross-build, so this uses a
+# native runner per OS) and upload them as artifacts. Trigger manually or on a
+# version tag.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: dialmouse-win.exe
+            outname: dialmouse.exe
+          - os: ubuntu-latest
+            artifact: dialmouse-linux
+            outname: dialmouse
+          - os: macos-latest
+            artifact: dialmouse-macos
+            outname: dialmouse
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller streamdeck hid
+
+      - name: Run tests
+        run: |
+          python tests/test_pure.py
+          python tests/test_step2.py
+          python tests/test_step3.py
+          python tests/test_step4.py
+          python tests/test_step5.py
+          python tests/test_step6.py
+
+      - name: Stage HIDAPI (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/libusb/hidapi/releases/latest/download/hidapi-win.zip" -OutFile hidapi-win.zip
+          Expand-Archive hidapi-win.zip hidapi-win -Force
+          Copy-Item hidapi-win\x64\hidapi.dll hidapi.dll -Force
+
+      - name: Stage HIDAPI (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install hidapi || true
+          for d in /opt/homebrew/lib/libhidapi.dylib /usr/local/lib/libhidapi.dylib; do
+            [ -e "$d" ] && cp "$d" ./libhidapi.dylib && break
+          done || true
+
+      - name: Stage HIDAPI (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update && sudo apt-get install -y libhidapi-libusb0 || true
+          for d in /usr/lib/x86_64-linux-gnu/libhidapi-libusb.so*; do
+            [ -e "$d" ] && cp "$d" ./libhidapi-libusb.so && break
+          done || true
+
+      - name: Build binary
+        run: pyinstaller --clean --noconfirm dialmouse.spec
+
+      - name: Rename artifact
+        shell: bash
+        run: |
+          mkdir -p out
+          cp "dist/${{ matrix.outname }}" "out/${{ matrix.artifact }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: out/${{ matrix.artifact }}
+          if-no-files-found: error

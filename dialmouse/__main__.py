@@ -21,6 +21,7 @@ from Companion and drives the cursor. Other actions:
 from __future__ import annotations
 
 import argparse
+import os
 import signal
 import socket
 import sys
@@ -427,7 +428,24 @@ def _cmd_run_receiver(logger, config, port, watchdog) -> int:
     return EXIT_OK
 
 
+def _bootstrap_frozen_dll_path() -> None:
+    """When running as a packaged (PyInstaller) binary on Windows, add the
+    bundle directory and the exe directory to the DLL search path so a bundled
+    ``hidapi.dll`` (Direct HID mode) loads with no manual steps — the whole point
+    of the offline USB build. Harmless/no-op when running from source."""
+    if not getattr(sys, "frozen", False) or sys.platform != "win32":
+        return
+    candidates = {getattr(sys, "_MEIPASS", None), os.path.dirname(sys.executable)}
+    for d in candidates:
+        if d and os.path.isdir(d) and hasattr(os, "add_dll_directory"):
+            try:
+                os.add_dll_directory(d)
+            except Exception:
+                pass
+
+
 def main(argv=None) -> int:
+    _bootstrap_frozen_dll_path()
     args = _build_parser().parse_args(argv)
     logger = setup_logging(verbose=args.verbose, log_dir=args.log_dir)
     logger.info("%s %s starting.", __app_name__, __version__)
