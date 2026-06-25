@@ -47,6 +47,21 @@ KEY_SNIPPET = "/dialmouse/key/snippet"    # <int> config-defined snippet, 1-base
 # Reserved for later steps (display = Step 5)
 DISPLAY_IDENTIFY = "/dialmouse/display/identify"
 
+# Display control — ACTIVE in Step 5 (DialMouse <- Companion)
+DISPLAY_ARM = "/dialmouse/display/arm"
+DISPLAY_PICK = "/dialmouse/display/pick"        # <int n> mirror display n -> Mini Mon
+DISPLAY_EXTEND = "/dialmouse/display/extend"
+DISPLAY_DUPLICATE = "/dialmouse/display/duplicate"
+DISPLAY_PRESET = "/dialmouse/display/preset"    # <name>
+DISPLAY_PANIC = "/dialmouse/display/panic"
+
+# Return channel — ACTIVE in Step 5 (DialMouse -> Companion, for button lights).
+# These are SENT, not received; see feedback.py.
+FB_CONFINE_STATE = "/dialmouse/confine/state"       # <int 1|0>
+FB_KEY_SHIFT_STATE = "/dialmouse/key/shift/state"   # <int 1|0>
+FB_DISPLAY_COUNT = "/dialmouse/display/count"       # <int n>
+FB_DISPLAY_ARMED = "/dialmouse/display/armed"       # <int 1|0>
+
 # Raw-UDP text fallback grammar (newline-delimited), for Companion Generic UDP:
 #   dx <int>     dy <int>     scroll <int>
 #   left|right|middle  down|up
@@ -57,4 +72,5 @@ DISPLAY_IDENTIFY = "/dialmouse/display/identify"
 #   precision on|off     turbo on|off
 #   key <name>    kdown <name>    kup <name>    mod <name>    snippet <int>
 #   type <text...>   (rest of line is typed literally)
+#   display arm|extend|duplicate|panic|identify    display pick <int>    display preset <name>
 # Parsed by server._parse_text_line().

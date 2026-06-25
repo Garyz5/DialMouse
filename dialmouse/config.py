@@ -63,6 +63,25 @@ class KeyboardConfig:
 
 
 @dataclass
+class FeedbackConfig:
+    # OSC return channel (DialMouse -> Companion) for button lights. Off by
+    # default; core input never depends on it.
+    enabled: bool = False
+    host: str = "127.0.0.1"
+    port: int = 12001
+
+
+@dataclass
+class DisplayConfig:
+    # Step 5 display control. dry_run logs commands without running them.
+    dry_run: bool = False
+    helper_path: str = ""        # e.g. staged MultiMonitorTool.exe / displayplacer
+    mirror_command: str = ""     # template for per-monitor mirror-pick (opt-in)
+    presets: dict = field(default_factory=dict)   # name -> OS command string
+    feedback: FeedbackConfig = field(default_factory=FeedbackConfig)
+
+
+@dataclass
 class MiniMonConfig:
     # How to identify the Mini Mon among all displays:
     #   "name"       -> by device name (e.g. "\\.\DISPLAY4"); resolution-proof,
@@ -107,8 +126,7 @@ class Config:
     network: NetworkConfig = field(default_factory=NetworkConfig)
     watchdog: WatchdogConfig = field(default_factory=WatchdogConfig)
     keyboard: KeyboardConfig = field(default_factory=KeyboardConfig)
-    # Passed through untouched for later steps:
-    display: Dict[str, Any] = field(default_factory=dict)
+    display: DisplayConfig = field(default_factory=DisplayConfig)
 
 
 # --------------------------------------------------------------------------- #
@@ -219,7 +237,23 @@ def _parse(raw: Dict[str, Any]) -> Config:
         get_logger().warning("config: keyboard.snippets=%r is not a list; ignoring.", snippets)
         snippets = []
     cfg.keyboard.snippets = [str(x) for x in snippets]
-    cfg.display = raw.get("display", {}) or {}
+
+    d = raw.get("display", {}) or {}
+    cfg.display.dry_run = _boolean(d.get("dry_run", False), False, "display.dry_run")
+    cfg.display.helper_path = str(d.get("helper_path", "") or "")
+    cfg.display.mirror_command = str(d.get("mirror_command", "") or "")
+    presets = d.get("presets", {})
+    cfg.display.presets = {str(k): str(v) for k, v in presets.items()} if isinstance(presets, dict) else {}
+    fb = d.get("feedback", {}) or {}
+    cfg.display.feedback.enabled = _boolean(fb.get("enabled", False), False, "display.feedback.enabled")
+    fbhost = fb.get("host", "127.0.0.1")
+    if fbhost not in ("127.0.0.1", "localhost", "::1"):
+        get_logger().warning(
+            "config: display.feedback.host=%r is not localhost; forcing 127.0.0.1.", fbhost)
+        fbhost = "127.0.0.1"
+    cfg.display.feedback.host = fbhost
+    cfg.display.feedback.port = int(_num(
+        fb.get("port", 12001), 12001, lo=1, hi=65535, name="display.feedback.port"))
     return cfg
 
 
@@ -245,7 +279,13 @@ def default_config_dict() -> Dict[str, Any]:
         },
         "watchdog": {"enabled": True, "timeout_s": 5.0},
         "keyboard": {"snippets": []},
-        "display": {},
+        "display": {
+            "dry_run": False,
+            "helper_path": "",
+            "mirror_command": "",
+            "presets": {},
+            "feedback": {"enabled": False, "host": "127.0.0.1", "port": 12001},
+        },
     }
 
 

@@ -47,6 +47,8 @@ class EventCore:
         enabled: bool = True,
         logger: Optional[logging.Logger] = None,
         keyboard=None,
+        display=None,
+        feedback=None,
     ) -> None:
         self._movement = movement
         self._backend = backend
@@ -56,6 +58,10 @@ class EventCore:
         # Keyboard controller (Step 4). Optional so existing call sites and tests
         # that only exercise the mouse path keep working.
         self._keyboard = keyboard
+        # Display controller + return-channel feedback (Step 5). Both optional;
+        # the core functions identically whether or not feedback is wired.
+        self._display = display
+        self._feedback = feedback
         # Drag-lock: when latched, the left button is held down until toggled off
         # so you can drag long distances without holding a dial.
         self._drag_locked = False
@@ -171,6 +177,8 @@ class EventCore:
         if self._keyboard is None:
             return
         self._keyboard.mod_toggle(name)
+        if self._feedback is not None:
+            self._feedback.shift_state(self._keyboard.shift_latched)
 
     def key_snippet(self, n: int) -> None:
         if not self._enabled or self._keyboard is None:
@@ -200,13 +208,16 @@ class EventCore:
     def confine_minimon(self) -> None:
         if self._confine.enable():
             self._snap_into_region()
+        self._publish_confine()
 
     def confine_off(self) -> None:
         self._confine.disable()
+        self._publish_confine()
 
     def confine_toggle(self) -> None:
         if self._confine.toggle():
             self._snap_into_region()
+        self._publish_confine()
 
     def park(self) -> None:
         target = self._confine.park_target()
@@ -215,6 +226,73 @@ class EventCore:
             self._log.debug("Parked cursor at Mini Mon centre %s.", target)
         else:
             self._log.warning("Park: no Mini Mon resolved.")
+
+    # -- display control (Step 5) -----------------------------------------
+
+    def display_arm(self) -> None:
+        if self._display is None:
+            return
+        self._display.arm()
+        self._publish_armed()
+
+    def display_pick(self, n: int) -> None:
+        if self._display is None:
+            return
+        self._display.pick(int(n))
+        self._publish_armed()
+        self._publish_confine()   # a switch may have moved the Mini Mon
+
+    def display_extend(self) -> None:
+        if self._display is None:
+            return
+        self._display.extend()
+        self._publish_armed()
+        self._publish_confine()
+
+    def display_duplicate(self) -> None:
+        if self._display is None:
+            return
+        self._display.duplicate()
+        self._publish_confine()
+
+    def display_panic(self) -> None:
+        if self._display is None:
+            return
+        self._display.panic()
+        self._publish_armed()
+        self._publish_confine()
+
+    def display_preset(self, name: str) -> None:
+        if self._display is None:
+            return
+        self._display.preset(name)
+        self._publish_confine()
+
+    def display_identify(self) -> None:
+        if self._display is None:
+            return
+        self._display.identify()
+
+    # -- return-channel feedback ------------------------------------------
+
+    def publish_state(self) -> None:
+        """Push the current state to Companion (called once at startup)."""
+        if self._feedback is None:
+            return
+        self._publish_confine()
+        self._publish_armed()
+        if self._keyboard is not None:
+            self._feedback.shift_state(self._keyboard.shift_latched)
+        if self._display is not None:
+            self._feedback.display_count(self._display.display_count())
+
+    def _publish_confine(self) -> None:
+        if self._feedback is not None:
+            self._feedback.confine_state(self._confine.is_confined)
+
+    def _publish_armed(self) -> None:
+        if self._feedback is not None and self._display is not None:
+            self._feedback.display_armed(self._display.armed)
 
     def _snap_into_region(self) -> None:
         # Pull the cursor into the Mini Mon when confinement engages, so it isn't

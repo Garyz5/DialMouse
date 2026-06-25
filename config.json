@@ -44,5 +44,15 @@
   "keyboard": {
     "snippets": []
   },
-  "display": {}
+  "display": {
+    "dry_run": false,
+    "helper_path": "",
+    "mirror_command": "",
+    "presets": {},
+    "feedback": {
+      "enabled": false,
+      "host": "127.0.0.1",
+      "port": 12001
+    }
+  }
 }

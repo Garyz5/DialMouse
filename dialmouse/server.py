@@ -115,6 +115,13 @@ class UdpReceiver:
             P.KEY_TYPE: lambda a: c.key_type(_first_str(a)),
             P.KEY_MOD_TOGGLE: lambda a: c.key_mod_toggle(_first_str(a)),
             P.KEY_SNIPPET: lambda a: c.key_snippet(_first_int(a, 0)),
+            P.DISPLAY_ARM: lambda a: c.display_arm(),
+            P.DISPLAY_PICK: lambda a: c.display_pick(_first_int(a, 0)),
+            P.DISPLAY_EXTEND: lambda a: c.display_extend(),
+            P.DISPLAY_DUPLICATE: lambda a: c.display_duplicate(),
+            P.DISPLAY_PRESET: lambda a: c.display_preset(_first_str(a)),
+            P.DISPLAY_PANIC: lambda a: c.display_panic(),
+            P.DISPLAY_IDENTIFY: lambda a: c.display_identify(),
         }
 
     # -- lifecycle ---------------------------------------------------------
@@ -281,6 +288,21 @@ class UdpReceiver:
         if head == "type":
             # Everything after "type " is typed literally (preserve spacing).
             return P.KEY_TYPE, [line[len("type"):].strip()]
+        if head == "display" and rest:
+            sub = rest[0].lower()
+            simple = {"arm": P.DISPLAY_ARM, "extend": P.DISPLAY_EXTEND,
+                      "duplicate": P.DISPLAY_DUPLICATE, "panic": P.DISPLAY_PANIC,
+                      "identify": P.DISPLAY_IDENTIFY}
+            if sub in simple:
+                return simple[sub], []
+            if sub == "pick" and len(rest) > 1:
+                try:
+                    return P.DISPLAY_PICK, [int(rest[1])]
+                except ValueError:
+                    return None
+            if sub == "preset" and len(rest) > 1:
+                return P.DISPLAY_PRESET, [rest[1]]
+            return None
         return None
 
     def _dispatch_address(self, address: str, args: List) -> None:

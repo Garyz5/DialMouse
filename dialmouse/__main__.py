@@ -4,12 +4,14 @@ Default action (no flags) RUNS THE RECEIVER: it listens on localhost for OSC/UDP
 from Companion and drives the cursor. Other actions:
 
     python -m dialmouse                       # run the receiver (Receiver mode)
-    python -m dialmouse --loopback-test [--duration 15]   # OSC -> cursor, no Companion
+    python -m dialmouse --loopback-test [--duration 10]   # OSC -> cursor, no Companion
     python -m dialmouse --make-config
     python -m dialmouse --list-monitors
     python -m dialmouse --identify
     python -m dialmouse --set-minimon N
-    python -m dialmouse --test [--confine] [--monitor N] [--duration 15]
+    python -m dialmouse --test [--confine] [--monitor N] [--duration 10]
+    python -m dialmouse --display status|extend|duplicate|panic [--dry-run]
+    python -m dialmouse --mirror N [--dry-run]      # mirror display N -> Mini Mon
     python -m dialmouse --version
 """
 
@@ -42,7 +44,10 @@ from .config import (
     write_default_config,
 )
 from .confine import ConfineController
+from .display import DisplayController
+from .display_backend import make_display_backend
 from .events import EventCore
+from .feedback import FeedbackSender
 from .identify import show_identify
 from .keyboard import KeyboardController
 from .keyboard_backend import KeyboardBackend
@@ -74,9 +79,17 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--monitor", type=int, default=None, metavar="N", help="with --test: target monitor N")
     p.add_argument("--loopback-test", action="store_true",
                    help="run the receiver and send it scripted OSC; cursor should move")
-    p.add_argument("--duration", type=float, default=15.0, metavar="SECONDS",
+    p.add_argument("--duration", type=float, default=10.0, metavar="SECONDS",
                    help="how long --test / --loopback-test run so you can observe "
-                        "(default 15; use 0 for a single pass)")
+                        "(default 10; use 0 for a single pass)")
+    p.add_argument("--display", choices=["status", "extend", "duplicate", "panic"],
+                   default=None, help="run a display action then exit (no network)")
+    p.add_argument("--mirror", type=int, default=None, metavar="N",
+                   help="mirror display N onto the Mini Mon (CLI test of mirror-pick)")
+    p.add_argument("--display-preset", default=None, metavar="NAME",
+                   help="run a config-defined display preset then exit")
+    p.add_argument("--dry-run", action="store_true",
+                   help="with display actions: log the exact command without running it")
     p.add_argument("--no-watchdog", action="store_true")
     p.add_argument("--log-dir", type=Path, default=None, metavar="DIR")
     return p
@@ -110,15 +123,26 @@ def _movement_from_config(cfg) -> MovementModel:
     )
 
 
-def _build_runtime(config, logger):
-    """Construct movement model, confinement, backends, keyboard, event core."""
+def _build_runtime(config, logger, dry_run_override=False):
+    """Construct movement, confinement, backends, keyboard, display, feedback,
+    and the event core that ties them together."""
     movement = _movement_from_config(config)
     confine = ConfineController(config.confine)
     backend = MouseBackend(logger=logger, region_provider=confine.active_region)
     kb_backend = KeyboardBackend(logger=logger)
     keyboard = KeyboardController(kb_backend, snippets=config.keyboard.snippets, logger=logger)
-    core = EventCore(movement, backend, confine, enabled=True, logger=logger, keyboard=keyboard)
-    return movement, confine, backend, core
+
+    dcfg = config.display
+    dry = dcfg.dry_run or dry_run_override
+    dbackend = make_display_backend(dry_run=dry, mirror_command=dcfg.mirror_command,
+                                    helper_path=dcfg.helper_path, logger=logger)
+    display = DisplayController(dbackend, confine=confine, presets=dcfg.presets, logger=logger)
+    feedback = FeedbackSender(host=dcfg.feedback.host, port=dcfg.feedback.port,
+                              enabled=dcfg.feedback.enabled, logger=logger)
+
+    core = EventCore(movement, backend, confine, enabled=True, logger=logger,
+                     keyboard=keyboard, display=display, feedback=feedback)
+    return movement, confine, backend, core, display, feedback
 
 
 # --------------------------------------------------------------------------- #
@@ -188,7 +212,7 @@ def _cmd_loopback_test(logger, config, port, watchdog, duration) -> int:
     time to watch and poke, beating the watchdog throughout so a long, healthy
     run is never mistaken for a hang.
     """
-    movement, confine, backend, core = _build_runtime(config, logger)
+    movement, confine, backend, core, display, feedback = _build_runtime(config, logger)
     try:
         backend.preflight()  # fail fast with clear guidance if no display/perm
     except DialMouseInjectionError as exc:
@@ -249,8 +273,41 @@ def _cmd_loopback_test(logger, config, port, watchdog, duration) -> int:
     return EXIT_OK
 
 
+def _cmd_display(logger, config, args) -> int:
+    """CLI display actions for hardware testing without Companion."""
+    confine = ConfineController(config.confine)
+    dcfg = config.display
+    dry = dcfg.dry_run or args.dry_run
+    backend = make_display_backend(dry_run=dry, mirror_command=dcfg.mirror_command,
+                                   helper_path=dcfg.helper_path, logger=logger)
+    disp = DisplayController(backend, confine=confine, presets=dcfg.presets, logger=logger)
+
+    if args.mirror is not None:
+        disp.arm()
+        return EXIT_OK if disp.pick(args.mirror) else EXIT_ERROR
+    if args.display_preset:
+        return EXIT_OK if disp.preset(args.display_preset) else EXIT_ERROR
+    if args.display == "status":
+        monitors = enumerate_monitors()
+        mm = confine.minimon
+        print(f"\nDisplays detected: {len(monitors)}")
+        for m in monitors:
+            tag = "  <-- Mini Mon" if mm and m.index == mm.index else ""
+            print("  " + m.describe() + tag)
+        print(f"\nPicker armed : {disp.armed}")
+        print(f"Dry-run      : {dry}")
+        print(f"Mirror cmd   : {dcfg.mirror_command or '(not configured)'}")
+        print(f"Presets      : {', '.join(dcfg.presets) or '(none)'}\n")
+        return EXIT_OK
+    fn = {"extend": disp.extend, "duplicate": disp.duplicate, "panic": disp.panic}.get(args.display)
+    if fn is None:
+        logger.error("Unknown display action.")
+        return EXIT_ERROR
+    return EXIT_OK if fn() else EXIT_ERROR
+
+
 def _cmd_run_receiver(logger, config, port, watchdog) -> int:
-    movement, confine, backend, core = _build_runtime(config, logger)
+    movement, confine, backend, core, display, feedback = _build_runtime(config, logger)
     try:
         backend.preflight()
     except DialMouseInjectionError as exc:
@@ -260,6 +317,7 @@ def _cmd_run_receiver(logger, config, port, watchdog) -> int:
         return EXIT_INJECTION
     if config.confine.default_on:
         core.confine_minimon()
+    core.publish_state()   # push initial state to Companion if feedback is on
     rx = UdpReceiver(core, host=config.network.host, port=port,
                      heartbeat=(watchdog.beat if watchdog else None),
                      max_events_per_sec=config.network.max_events_per_sec, logger=logger)
@@ -275,6 +333,7 @@ def _cmd_run_receiver(logger, config, port, watchdog) -> int:
         logger.info("Interrupted; stopping receiver.")
     finally:
         rx.stop()
+        feedback.close()
     return EXIT_OK
 
 
@@ -346,6 +405,9 @@ def main(argv=None) -> int:
 
         if args.loopback_test:
             return _cmd_loopback_test(logger, config, port, watchdog, args.duration)
+
+        if args.display is not None or args.mirror is not None or args.display_preset is not None:
+            return _cmd_display(logger, config, args)
 
         # Default: run the receiver.
         return _cmd_run_receiver(logger, config, port, watchdog)

@@ -15,7 +15,7 @@ Later steps add the config system, the OSC/UDP receiver (Receiver mode), the
 control surface, optional Direct HID mode, packaging, and docs.
 """
 
-__version__ = "0.4.0"  # Step 4: keyboard back-end + control surface
+__version__ = "0.5.0"  # Step 5: display control + OSC return channel
 __app_name__ = "DialMouse"
 
 # Process exit codes. Stable across the whole project so launch scripts and the

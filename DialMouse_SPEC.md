@@ -11,7 +11,7 @@ build log.
 > The Project stores it; I rewrite it on request. At the end of each build step
 > I update the Build Log and hand you a fresh copy.
 
-- **Document version:** v0.8 (Step 4 built: keyboard back-end + control surface; pending hardware verify)
+- **Document version:** v0.9 (Step 5 built: display control + OSC return channel; pending hardware verify)
 - **Last updated:** 2026-06-24
 - **Source repository:** https://github.com/Garyz5/DialMouse — clone this at the
   start of each session so the code is in front of us. The verified source is the
@@ -307,7 +307,7 @@ Each step is independently runnable/testable before the next.
 | 2 | Config + movement model (accel/invert) + per-monitor enumeration + **confine/detach engine** | ✅ done |
 | 3 | OSC/UDP receiver + event core (wire pointer/scroll/buttons + confine/detach) | ✅ done |
 | 4 | Keyboard back-end (inject + shift/layer state) + control surface (pause, sensitivity, precision/turbo, drag-lock, snippets) | ✅ built (pending hardware verify) |
-| 5 | Display-control module (extend / mirror-pick / panic) per-OS + return-channel feedback | ☐ |
+| 5 | Display-control module (extend / mirror-pick / panic) per-OS + return-channel feedback | ✅ built (pending hardware verify) |
 | 6 | Direct HID mode (optional) | ☐ |
 | 7 | Packaging: PyInstaller per-OS + GitHub Actions; stage helper tools; USB layout | ☐ |
 | 8 | Docs: full single-/multi-page Companion setup guide + README + importable Companion config if feasible | ☐ |
@@ -327,33 +327,35 @@ Each step is independently runnable/testable before the next.
 
 ---
 
-## 10b. Next session (Step 5) — start here
+## 10b. Next session (Step 6) — start here
 
-Step 4 is built and unit-verified (62 logic tests). **First, verify Step 4 on
-hardware** (see the checklist in the latest build-log entry), then proceed to
-Step 5.
+Step 5 is built and unit-verified (80 logic tests). **First, verify Step 5 on
+hardware** (see the checklist in the latest build-log entry) — display switching
+is the most system-disruptive part, so test with `--dry-run` before letting it
+touch the rig. Then choose the next track:
 
-**Step 5 — Display-control module:**
-1. `extend` / `mirror-pick` / `panic` per-OS. Windows first: CCD API
-   (`SetDisplayConfig` via ctypes) for per-monitor mirror-pick, or staged NirSoft
-   **MultiMonitorTool** (offline-friendly) as a fallback; `DisplaySwitch.exe`
-   numeric args (`2`=duplicate, `3`=extend) for global modes on 24H2.
-2. Wire the reserved OSC: `/dialmouse/display/{arm,pick,extend,preset,panic,
-   identify}`.
-3. The armed mirror-picker UX (press Mirror→, keys 1–N light, tap one).
-4. Begin the OSC **return channel** (DialMouse→Companion) for button feedback:
-   `/display/count`, `/display/armed`, `/confine/state`, `/key/shift/state`.
-   Functions never depend on the lights.
+- **Step 6 — Direct HID mode (optional):** read the Plus XL over HID when
+  Companion isn't using the deck, emitting the same internal events into the
+  shared event core. Front-end only; the back-ends are unchanged.
+- **Step 7 — Packaging:** PyInstaller per-OS + GitHub Actions; stage helper
+  tools (MultiMonitorTool); USB layout.
+- **Step 8 — Docs:** the full Companion setup guide + README + importable
+  Companion config.
 
-**Carryover notes:**
-- macOS display switching = Quartz `CGConfigureDisplayMirrorOfDisplay` or staged
-  `displayplacer`; Linux/X11 = `xrandr --same-as`; Wayland has no universal tool
-  (documented weak spot).
-- The Step 4 keyboard model is **confirmed**: latched Shift uses software
-  character resolution (types the shifted char, no physical Shift held), while
-  inline combos like `ctrl+c` physically hold the modifier around one tap. No
-  change needed unless a layout other than US-QWERTY is required (then the
-  shifted-symbol map in `keyboard.py` needs a per-layout table).
+**Display-control reality (Step 5 as built):**
+- Global modes (`extend`=DisplaySwitch 3, `duplicate`=DisplaySwitch 2, `panic`
+  =extend) are implemented for Windows and are safe/recoverable. macOS
+  (`displayplacer`) and Linux/X11 (`xrandr`) are best-effort and **unverified**;
+  Wayland has no universal tool.
+- **Per-monitor mirror-pick is opt-in and configurable**, not a hard-coded
+  destructive command: it runs `config.display.mirror_command` (a template with
+  `{tool} {target} {target_name} {minimon} {minimon_name}`) only if set, else
+  logs-and-no-ops. The picker state machine, OSC, and return channel all work;
+  the actual Windows mirror command still needs to be dialled in on the rig
+  (CCD API via ctypes is the eventual native path; MultiMonitorTool is the
+  staged-tool route).
+- `/dialmouse/display/identify` runs the overlay in a **separate process** so it
+  never blocks the receiver loop.
 
 ---
 
@@ -441,3 +443,37 @@ Step 5.
   `/dialmouse/key/tap` + a `⇧Shift` to `/dialmouse/key/mod/toggle shift` and
   confirm letters/symbols type with correct case, `ctrl+c`/`ctrl+v` work,
   drag-lock latches the left button, and precision/turbo change pointer speed.
+
+- **2026-06-24 — Step 5 built (display control + OSC return channel).** v0.5.0.
+  80 logic tests pass (11+18+11+22 Steps 1-4, +18 new). Delivered:
+  - **Display back-end** (`display_backend.py`): per-OS topology ops with a
+    guarded command runner, dry-run, and graceful no-ops. Windows real
+    (`DisplaySwitch.exe 3`=extend, `2`=duplicate, panic=extend); macOS
+    (`displayplacer`) and Linux/X11 (`xrandr`) scaffolded best-effort/unverified;
+    Wayland documented as the weak spot. **Per-monitor mirror-pick is
+    config-driven** (`display.mirror_command` template) and no-ops safely if
+    unset, so no untested destructive command ever ships.
+  - **Display controller** (`display.py`): armed mirror-picker state machine
+    (arm → pick N → auto-disarm), extend/duplicate/panic/preset, each
+    re-resolving the Mini Mon afterwards (`confine.refresh()`). `identify` runs
+    as a separate process so the tkinter overlay never blocks the receiver.
+  - **OSC return channel** (`feedback.py`): optional, de-duped, fire-and-forget
+    sender for `/confine/state`, `/key/shift/state`, `/display/count`,
+    `/display/armed`. Off unless `display.feedback.enabled`; core never depends
+    on it. Wired into the event core at the confine/shift/arm/pick points and
+    pushed once at startup via `core.publish_state()`.
+  - Wired inbound OSC `/dialmouse/display/{arm,pick,extend,duplicate,preset,
+    panic,identify}` + raw-text grammar (`display arm|extend|duplicate|panic|
+    identify`, `display pick N`, `display preset NAME`).
+  - New CLI for hardware testing without Companion: `--display
+    status|extend|duplicate|panic`, `--mirror N`, `--display-preset NAME`,
+    `--dry-run`. Typed `display` config section (dry_run, helper_path,
+    mirror_command, presets, feedback{enabled,host,port}); `config.json` +
+    `--make-config` updated (backward compatible). Also folded in last session's
+    `--duration` default 15→10.
+  **Pending hardware verification (do first next session):** on the Windows rig,
+  `python -m dialmouse --display status` (lists displays + Mini Mon),
+  `--display extend --dry-run` then without `--dry-run` (Win+P extend toggles),
+  `--display panic` (recovers to extended), and confirm the receiver pushes
+  feedback when `display.feedback.enabled` is set + Companion is wired. Dial in
+  `display.mirror_command` for true per-monitor mirror-pick on the rig.
