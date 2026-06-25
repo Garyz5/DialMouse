@@ -51,8 +51,13 @@ def _hid_guidance(os_name: str) -> str:
             "  if prompted.")
     if os_name == platform_info.OS_WINDOWS:
         return (
-            "Direct HID on Windows: close Companion / the Elgato Stream Deck app so\n"
-            "  the deck is free — HID access is exclusive — then retry.")
+            "Direct HID on Windows needs the native HIDAPI library:\n"
+            "  * Download hidapi-win.zip from github.com/libusb/hidapi/releases,\n"
+            "    and copy x64\\hidapi.dll next to the app (the folder you run from)\n"
+            "    or into your Python directory. The pip 'hidapi' package is a\n"
+            "    Cython binding, NOT this loadable DLL.\n"
+            "  * Then make sure Companion / the Elgato Stream Deck app is closed\n"
+            "    so the deck is free — HID access is exclusive — and retry.")
     return "Ensure a HID backend is present and nothing else is using the deck."
 
 
