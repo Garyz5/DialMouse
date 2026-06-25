@@ -65,6 +65,7 @@ class MovementModel:
         self.turbo_factor = max(1.0, float(turbo_factor))
         self.sensitivity_presets = [max(1, min(200, int(p)))
                                     for p in (sensitivity_presets or [3, 6, 12])]
+        self._default_ppt = self.pixels_per_tick   # for sensitivity reset (dial 4 press)
         self._precision = False
         self._turbo = False
         self._state = MovementState()
@@ -78,6 +79,16 @@ class MovementModel:
     def adjust_scroll_speed(self, delta: int) -> int:
         self.scroll_lines_per_tick = max(1, min(50, self.scroll_lines_per_tick + int(delta)))
         return self.scroll_lines_per_tick
+
+    def reset_sensitivity(self) -> int:
+        """Restore pixels_per_tick to the configured default (dial-4 press)."""
+        self.pixels_per_tick = self._default_ppt
+        return self.pixels_per_tick
+
+    def toggle_scroll_invert(self) -> bool:
+        """Flip the scroll direction (dial-5 press)."""
+        self.scroll_invert = not self.scroll_invert
+        return self.scroll_invert
 
     def set_precision(self, on: bool) -> None:
         """Momentary precision (slow) hold. Turbo wins if both are somehow on."""

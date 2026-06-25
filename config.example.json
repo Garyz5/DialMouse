@@ -54,5 +54,42 @@
       "host": "127.0.0.1",
       "port": 12001
     }
+  },
+  "hid": {
+    "auto_open": true,
+    "dials": [
+      {
+        "turn": "move_y",
+        "press": "button_left"
+      },
+      {
+        "turn": "move_x",
+        "press": "button_right"
+      },
+      {
+        "turn": "scroll",
+        "press": "button_middle"
+      },
+      {
+        "turn": "sensitivity",
+        "press": "sensitivity_reset"
+      },
+      {
+        "turn": "scrollspeed",
+        "press": "scroll_invert"
+      },
+      {
+        "turn": "none",
+        "press": "pause_toggle"
+      }
+    ],
+    "invert": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
   }
 }

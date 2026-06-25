@@ -11,7 +11,7 @@ build log.
 > The Project stores it; I rewrite it on request. At the end of each build step
 > I update the Build Log and hand you a fresh copy.
 
-- **Document version:** v0.9.1 (Step 5 + real OS-level confinement; pending full hardware verify)
+- **Document version:** v0.10 (Step 6 built: Direct HID mode; pending hardware verify)
 - **Last updated:** 2026-06-24
 - **Source repository:** https://github.com/Garyz5/DialMouse — clone this at the
   start of each session so the code is in front of us. The verified source is the
@@ -308,7 +308,7 @@ Each step is independently runnable/testable before the next.
 | 3 | OSC/UDP receiver + event core (wire pointer/scroll/buttons + confine/detach) | ✅ done |
 | 4 | Keyboard back-end (inject + shift/layer state) + control surface (pause, sensitivity, precision/turbo, drag-lock, snippets) | ✅ built (pending hardware verify) |
 | 5 | Display-control module (extend / mirror-pick / panic) per-OS + return-channel feedback | ✅ built (pending hardware verify) |
-| 6 | Direct HID mode (optional) | ☐ |
+| 6 | Direct HID mode (optional) | ✅ built (pending hardware verify) |
 | 7 | Packaging: PyInstaller per-OS + GitHub Actions; stage helper tools; USB layout | ☐ |
 | 8 | Docs: full single-/multi-page Companion setup guide + README + importable Companion config if feasible | ☐ |
 
@@ -327,35 +327,37 @@ Each step is independently runnable/testable before the next.
 
 ---
 
-## 10b. Next session (Step 6) — start here
+## 10b. Next session (Step 7 or 8) — start here
 
-Step 5 is built and unit-verified (80 logic tests). **First, verify Step 5 on
-hardware** (see the checklist in the latest build-log entry) — display switching
-is the most system-disruptive part, so test with `--dry-run` before letting it
-touch the rig. Then choose the next track:
+Step 6 is built and unit-verified (91 logic tests). **First, verify Step 6 on
+hardware** (checklist in the latest build-log entry) — close Companion, then
+`--hid-test` to confirm the deck opens and which dial index is which, then `--hid`
+to drive the cursor. Then choose:
 
-- **Step 6 — Direct HID mode (optional):** read the Plus XL over HID when
-  Companion isn't using the deck, emitting the same internal events into the
-  shared event core. Front-end only; the back-ends are unchanged.
-- **Step 7 — Packaging:** PyInstaller per-OS + GitHub Actions; stage helper
-  tools (MultiMonitorTool); USB layout.
-- **Step 8 — Docs:** the full Companion setup guide + README + importable
-  Companion config.
+- **Step 7 — Packaging:** PyInstaller per-OS one-file binaries + a GitHub Actions
+  workflow building all three; bundle the HID backend (hidapi) and stage helper
+  tools (MultiMonitorTool); lay out the USB drive (`/DialMouse/bin/...`, launch
+  scripts, `config.example.json`, README). This is what makes it the offline
+  carry-between-gigs tool.
+- **Step 8 — Docs:** the full Companion setup guide (per-dial OSC action table +
+  the QWERTY/Utility page build) + README (per-OS quick start, permissions,
+  config reference, troubleshooting) + an importable Companion config if feasible.
 
-**Display-control reality (Step 5 as built):**
-- Global modes (`extend`=DisplaySwitch 3, `duplicate`=DisplaySwitch 2, `panic`
-  =extend) are implemented for Windows and are safe/recoverable. macOS
-  (`displayplacer`) and Linux/X11 (`xrandr`) are best-effort and **unverified**;
-  Wayland has no universal tool.
-- **Per-monitor mirror-pick is opt-in and configurable**, not a hard-coded
-  destructive command: it runs `config.display.mirror_command` (a template with
-  `{tool} {target} {target_name} {minimon} {minimon_name}`) only if set, else
-  logs-and-no-ops. The picker state machine, OSC, and return channel all work;
-  the actual Windows mirror command still needs to be dialled in on the rig
-  (CCD API via ctypes is the eventual native path; MultiMonitorTool is the
-  staged-tool route).
-- `/dialmouse/display/identify` runs the overlay in a **separate process** so it
-  never blocks the receiver loop.
+**Direct HID reality (Step 6 as built):**
+- Built on the cross-platform `python-elgato-streamdeck` library (guarded,
+  OPTIONAL import): dial turn/press + keys + touch decoded for us. If the library
+  or a HID backend is missing, Receiver mode still works; only `--hid` is
+  unavailable, with per-OS guidance.
+- The dial map is config-driven (`hid.dials`, `hid.invert`) and matches the spec
+  defaults; the translator (`hid_map.py`) is pure and fully unit-tested with a
+  mock core, so HID and Receiver mode drive the SAME event core identically.
+- `--hid-test` opens the deck and prints dial/key/touch events WITHOUT injecting,
+  for hardware discovery (which index is which dial, turn direction). `--hid` (or
+  `mode: "hid"`) drives the cursor for real.
+- HID access is exclusive: Companion and Direct HID cannot hold the deck at once.
+- **Unknown:** whether the library recognizes this exact "Plus XL" (36 keys / 6
+  dials / touch) device. `--hid-test` will reveal what it enumerates; if it
+  doesn't recognize the device, Receiver mode (already verified) remains primary.
 
 ---
 
@@ -495,3 +497,35 @@ touch the rig. Then choose the next track:
   shipped default was overwriting `--set-minimon`). Verified on hardware that the
   Mini Mon stays name-stable (`\\.\DISPLAY3`) even after its resolution was
   changed to 720x1280.
+
+- **2026-06-24 — Step 6 built (Direct HID mode).** v0.6.0. 91 logic tests pass
+  (11+18+11+22+21 Steps 1-5, +8 new). Delivered the optional second front-end:
+  read the Plus XL's dials directly over USB when Companion isn't using the deck,
+  emitting the SAME internal events into the shared event core (so HID and
+  Receiver mode behave identically).
+  - **`hid_frontend.py`:** opens the deck via the cross-platform
+    `python-elgato-streamdeck` library (guarded, optional import), registers
+    dial/key/touch callbacks, runs a watchdog-fed idle loop, and re-asserts the
+    confine clip each loop. Fails gracefully with per-OS guidance if the library
+    or HID backend is missing, or if the deck is busy (Companion has it — HID is
+    exclusive) — Receiver mode still works regardless.
+  - **`hid_map.py`:** pure, device-free translator from `(dial, turn/press,
+    value)` to event-core calls. Implements the spec dial map (Y/X/scroll +
+    L/R/M buttons on dials 1-3; sensitivity/scrollspeed + reset/invert/pause on
+    4-6), fully config-driven and unit-tested with a mock core.
+  - Added `MovementModel.reset_sensitivity()` / `toggle_scroll_invert()` and the
+    EventCore wrappers (for dial-4/5 presses).
+  - Typed `hid` config section (`auto_open`, per-dial `dials` map, `invert`),
+    validated (unknown actions -> "none"); `config.json` + `config.example.json`
+    + `--make-config` updated. `requirements.txt` lists `streamdeck` + `hidapi`
+    as OPTIONAL (Receiver mode needs neither).
+  - CLI: `--hid` (run Direct HID mode), `--hid-test` (open the deck and print
+    dial/key/touch events without injecting — hardware discovery). `mode: "hid"`
+    in config also routes the default action to HID.
+  **Pending hardware verification (do first next session):** close Companion (HID
+  is exclusive), then `python -m dialmouse --hid-test` — confirm the deck opens
+  and watch the printed events as you turn/press each dial (note which index is
+  which and the turn direction). Then `python -m dialmouse --hid` and confirm
+  dial 1 moves the cursor vertically, dial 2 horizontally, dial 3 scrolls, presses
+  fire L/R/M, and dial 6 press pauses/resumes. If the library doesn't recognize
+  the device, say so — Receiver mode stays primary.

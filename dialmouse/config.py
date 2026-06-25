@@ -117,6 +117,27 @@ class WatchdogConfig:
     timeout_s: float = 5.0
 
 
+def _default_hid_dials() -> list:
+    # The spec dial map (1-based in the spec; 0-based here).
+    return [
+        {"turn": "move_y", "press": "button_left"},
+        {"turn": "move_x", "press": "button_right"},
+        {"turn": "scroll", "press": "button_middle"},
+        {"turn": "sensitivity", "press": "sensitivity_reset"},
+        {"turn": "scrollspeed", "press": "scroll_invert"},
+        {"turn": "none", "press": "pause_toggle"},
+    ]
+
+
+@dataclass
+class HidConfig:
+    # Direct HID mode (mode="hid"): drive the cursor by reading the deck's dials
+    # directly. Fully remappable per dial; invert flips a dial's turn direction.
+    auto_open: bool = True
+    dials: list = field(default_factory=_default_hid_dials)
+    invert: list = field(default_factory=lambda: [False] * 6)
+
+
 @dataclass
 class Config:
     mode: str = "receiver"               # "receiver" | "hid"
@@ -127,6 +148,7 @@ class Config:
     watchdog: WatchdogConfig = field(default_factory=WatchdogConfig)
     keyboard: KeyboardConfig = field(default_factory=KeyboardConfig)
     display: DisplayConfig = field(default_factory=DisplayConfig)
+    hid: HidConfig = field(default_factory=HidConfig)
 
 
 # --------------------------------------------------------------------------- #
@@ -254,6 +276,28 @@ def _parse(raw: Dict[str, Any]) -> Config:
     cfg.display.feedback.host = fbhost
     cfg.display.feedback.port = int(_num(
         fb.get("port", 12001), 12001, lo=1, hi=65535, name="display.feedback.port"))
+
+    from .hid_map import TURN_ACTIONS, PRESS_ACTIONS
+    h = raw.get("hid", {}) or {}
+    cfg.hid.auto_open = _boolean(h.get("auto_open", True), True, "hid.auto_open")
+    dials = h.get("dials")
+    if isinstance(dials, list) and dials:
+        parsed = []
+        for i, d in enumerate(dials):
+            d = d if isinstance(d, dict) else {}
+            turn = d.get("turn", "none")
+            press = d.get("press", "none")
+            if turn not in TURN_ACTIONS:
+                get_logger().warning("config: hid.dials[%d].turn=%r invalid; using 'none'.", i, turn)
+                turn = "none"
+            if press not in PRESS_ACTIONS:
+                get_logger().warning("config: hid.dials[%d].press=%r invalid; using 'none'.", i, press)
+                press = "none"
+            parsed.append({"turn": turn, "press": press})
+        cfg.hid.dials = parsed
+    inv = h.get("invert")
+    if isinstance(inv, list):
+        cfg.hid.invert = [bool(x) for x in inv]
     return cfg
 
 
@@ -285,6 +329,18 @@ def default_config_dict() -> Dict[str, Any]:
             "mirror_command": "",
             "presets": {},
             "feedback": {"enabled": False, "host": "127.0.0.1", "port": 12001},
+        },
+        "hid": {
+            "auto_open": True,
+            "dials": [
+                {"turn": "move_y", "press": "button_left"},
+                {"turn": "move_x", "press": "button_right"},
+                {"turn": "scroll", "press": "button_middle"},
+                {"turn": "sensitivity", "press": "sensitivity_reset"},
+                {"turn": "scrollspeed", "press": "scroll_invert"},
+                {"turn": "none", "press": "pause_toggle"},
+            ],
+            "invert": [False, False, False, False, False, False],
         },
     }
 

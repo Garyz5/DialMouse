@@ -141,6 +141,14 @@ class EventCore:
         v = self._movement.set_sensitivity_preset(int(n))
         self._log.info("Sensitivity preset %d -> %d px/tick.", int(n), v)
 
+    def reset_sensitivity(self) -> None:
+        v = self._movement.reset_sensitivity()
+        self._log.info("Sensitivity reset to default (%d px/tick).", v)
+
+    def toggle_scroll_invert(self) -> None:
+        v = self._movement.toggle_scroll_invert()
+        self._log.info("Scroll direction %s.", "inverted" if v else "normal")
+
     def set_precision(self, on: bool) -> None:
         self._movement.set_precision(bool(on))
         self._log.debug("Precision mode %s.", "on" if on else "off")

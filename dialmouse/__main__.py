@@ -13,6 +13,8 @@ from Companion and drives the cursor. Other actions:
     python -m dialmouse --confine-test [--monitor N] [--duration 10]   # confine + HOLD
     python -m dialmouse --display status|extend|duplicate|panic [--dry-run]
     python -m dialmouse --mirror N [--dry-run]      # mirror display N -> Mini Mon
+    python -m dialmouse --hid                 # Direct HID mode (no Companion)
+    python -m dialmouse --hid-test            # print dial/key/touch events
     python -m dialmouse --version
 """
 
@@ -49,6 +51,7 @@ from .display import DisplayController
 from .display_backend import make_display_backend
 from .events import EventCore
 from .feedback import FeedbackSender
+from .hid_frontend import HidFrontend, HidUnavailable
 from .identify import show_identify
 from .keyboard import KeyboardController
 from .keyboard_backend import KeyboardBackend
@@ -94,6 +97,11 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="run a config-defined display preset then exit")
     p.add_argument("--dry-run", action="store_true",
                    help="with display actions: log the exact command without running it")
+    p.add_argument("--hid", action="store_true",
+                   help="run in Direct HID mode (read the deck's dials directly)")
+    p.add_argument("--hid-test", action="store_true",
+                   help="open the deck and print dial/key/touch events without "
+                        "driving the cursor (hardware discovery)")
     p.add_argument("--no-watchdog", action="store_true")
     p.add_argument("--log-dir", type=Path, default=None, metavar="DIR")
     return p
@@ -351,6 +359,42 @@ def _cmd_confine_test(logger, config, watchdog, args) -> int:
     return EXIT_OK
 
 
+def _cmd_run_hid(logger, config, watchdog, observe_only=False) -> int:
+    """Direct HID mode: read the deck's dials directly and drive the cursor.
+    With observe_only (--hid-test), print events without injecting anything."""
+    movement, confine, backend, core, display, feedback = _build_runtime(config, logger)
+    if not observe_only:
+        try:
+            backend.preflight()
+        except DialMouseInjectionError as exc:
+            logger.error("%s", exc)
+            if exc.guidance:
+                logger.error("How to fix:\n%s", exc.guidance)
+            return EXIT_INJECTION
+        if config.confine.default_on:
+            core.confine_minimon()
+        core.publish_state()
+
+    front = HidFrontend(core, config.hid, heartbeat=(watchdog.beat if watchdog else None),
+                        observe_only=observe_only, logger=logger)
+    try:
+        front.open()
+    except HidUnavailable as exc:
+        logger.error("Direct HID mode unavailable: %s", exc)
+        if exc.guidance:
+            logger.error("How to fix:\n%s", exc.guidance)
+        return EXIT_ERROR
+    logger.info("Press Ctrl-C to stop.")
+    try:
+        front.run()
+    except KeyboardInterrupt:
+        logger.info("Interrupted; stopping.")
+    finally:
+        front.close()
+        feedback.close()
+    return EXIT_OK
+
+
 def _cmd_run_receiver(logger, config, port, watchdog) -> int:
     movement, confine, backend, core, display, feedback = _build_runtime(config, logger)
     try:
@@ -452,11 +496,17 @@ def main(argv=None) -> int:
         if args.confine_test:
             return _cmd_confine_test(logger, config, watchdog, args)
 
+        if args.hid_test:
+            return _cmd_run_hid(logger, config, watchdog, observe_only=True)
+
         if args.loopback_test:
             return _cmd_loopback_test(logger, config, port, watchdog, args.duration)
 
         if args.display is not None or args.mirror is not None or args.display_preset is not None:
             return _cmd_display(logger, config, args)
+
+        if args.hid or config.mode == "hid":
+            return _cmd_run_hid(logger, config, watchdog, observe_only=False)
 
         # Default: run the receiver.
         return _cmd_run_receiver(logger, config, port, watchdog)
