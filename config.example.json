@@ -30,11 +30,11 @@
   "confine": {
     "default_on": false,
     "minimon": {
-      "match": "name",
-      "name": "\\\\.\\DISPLAY3",
+      "match": "resolution",
+      "name": null,
       "width": 1920,
       "height": 1080,
-      "index": 2
+      "index": null
     }
   },
   "watchdog": {

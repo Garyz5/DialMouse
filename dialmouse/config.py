@@ -296,7 +296,8 @@ def load_config(path: Optional[Path]) -> Config:
         log.debug("No config path given; using built-in defaults.")
         return Config()
     if not path.exists():
-        log.info("No config at %s; using built-in defaults. (Run --make-config to create one.)", path)
+        log.info("No config at %s; using built-in defaults. "
+                 "(Copy config.example.json to config.json, or run --make-config.)", path)
         return Config()
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))

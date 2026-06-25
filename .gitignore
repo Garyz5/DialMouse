@@ -5,3 +5,4 @@ dialmouse.log*
 dist/
 build/
 .venv/
+config.json
