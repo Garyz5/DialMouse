@@ -18,6 +18,7 @@ from __future__ import annotations
 from typing import Callable, List, Optional, Tuple
 
 from .config import ConfineConfig
+from .cursor_clip import CursorClipper, make_clipper
 from .logsetup import get_logger
 from .monitors import Monitor, enumerate_monitors, pick_minimon
 from .virtual_desktop import Bounds
@@ -28,9 +29,13 @@ class ConfineController:
         self,
         cfg: ConfineConfig,
         monitor_source: Optional[Callable[[], List[Monitor]]] = None,
+        clipper: Optional[CursorClipper] = None,
     ) -> None:
         self._cfg = cfg
         self._monitor_source = monitor_source or enumerate_monitors
+        # OS-level clipper: confines a *manual* mouse too, not just DialMouse
+        # motion. Defaults to the real per-OS clipper; tests inject a fake.
+        self._clipper = clipper if clipper is not None else make_clipper()
         self._log = get_logger()
         self._minimon: Optional[Monitor] = None
         self._confined: bool = False
@@ -46,6 +51,10 @@ class ConfineController:
         self._minimon = pick_minimon(monitors, self._cfg.minimon)
         if self._minimon:
             self._log.debug("Mini Mon resolved to %s", self._minimon.describe())
+            # If we're actively confined, re-apply the OS clip to the Mini Mon's
+            # current geometry (it may have moved/resized since we enabled).
+            if self._confined:
+                self._clipper.clip(self._minimon.to_bounds())
         else:
             self._log.warning("Mini Mon could not be resolved; confinement will no-op.")
         return self._minimon
@@ -69,12 +78,21 @@ class ConfineController:
             self._confined = False
             return False
         self._confined = True
+        # OS-level clip so a manual mouse is contained too, not just our motion.
+        self._clipper.clip(self._minimon.to_bounds())
         self._log.info("Cursor confined to Mini Mon (%s).", self._minimon.describe())
         return True
 
     def disable(self) -> None:
         self._confined = False
+        self._clipper.release()
         self._log.info("Cursor detached (free roam).")
+
+    def reassert_clip(self) -> None:
+        """Re-apply the OS clip if confined. Cheap; call periodically so the clip
+        survives focus/desktop changes that Windows uses to drop it."""
+        if self._confined and self._minimon is not None:
+            self._clipper.reassert()
 
     def toggle(self) -> bool:
         if self.is_confined:

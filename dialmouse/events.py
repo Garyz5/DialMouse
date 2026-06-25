@@ -227,6 +227,11 @@ class EventCore:
         else:
             self._log.warning("Park: no Mini Mon resolved.")
 
+    def confine_reassert(self) -> None:
+        """Re-apply the OS-level cursor clip if confined. Called periodically by
+        the receiver loop so the clip survives focus/desktop changes."""
+        self._confine.reassert_clip()
+
     # -- display control (Step 5) -----------------------------------------
 
     def display_arm(self) -> None:

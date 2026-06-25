@@ -11,7 +11,7 @@ build log.
 > The Project stores it; I rewrite it on request. At the end of each build step
 > I update the Build Log and hand you a fresh copy.
 
-- **Document version:** v0.9 (Step 5 built: display control + OSC return channel; pending hardware verify)
+- **Document version:** v0.9.1 (Step 5 + real OS-level confinement; pending full hardware verify)
 - **Last updated:** 2026-06-24
 - **Source repository:** https://github.com/Garyz5/DialMouse — clone this at the
   start of each session so the code is in front of us. The verified source is the
@@ -477,3 +477,21 @@ touch the rig. Then choose the next track:
   `--display panic` (recovers to extended), and confirm the receiver pushes
   feedback when `display.feedback.enabled` is set + Companion is wired. Dial in
   `display.mirror_command` for true per-monitor mirror-pick on the rig.
+
+- **2026-06-24 — Confinement made real (OS-level clip).** v0.5.1. Fixed a real
+  bug surfaced on hardware: confinement only clamped DialMouse-driven motion, so
+  a **manually moved physical mouse escaped the Mini Mon**. Added
+  `cursor_clip.py` (Windows `ClipCursor` via ctypes; macOS/Linux documented
+  no-op for now). `ConfineController` now engages the OS clip on enable, releases
+  it on detach, and re-clips on `refresh()` (so it tracks the Mini Mon's live
+  geometry after a resolution/topology change). The receiver re-asserts the clip
+  each loop (`core.confine_reassert` via a new `UdpReceiver.idle_hook`) so it
+  survives focus/desktop changes; Windows auto-releases the clip on process exit,
+  so a crash/watchdog-kill can never trap the cursor. New `--confine-test
+  [--monitor N] [--duration 10]`: parks the cursor on the Mini Mon and HOLDS
+  (no square drawing) so you can move a physical mouse and watch it stay
+  contained. 83 logic tests pass (+3 clip-wiring). **Note:** deliverable zips no
+  longer include `config.json` (it is user state — the Mini Mon selection — and a
+  shipped default was overwriting `--set-minimon`). Verified on hardware that the
+  Mini Mon stays name-stable (`\\.\DISPLAY3`) even after its resolution was
+  changed to 720x1280.

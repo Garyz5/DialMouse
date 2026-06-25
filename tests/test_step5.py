@@ -295,6 +295,56 @@ def test_publish_state_pushes_everything():
             P.FB_DISPLAY_COUNT} <= addrs
 
 
+# --------------------------------------------------------------------------- #
+# OS-level cursor clip wiring (manual-mouse confinement)
+# --------------------------------------------------------------------------- #
+
+class MockClipper:
+    def __init__(self):
+        self.clips = []; self.releases = 0; self.reasserts = 0
+    @property
+    def active(self): return bool(self.clips) and self.releases < len(self.clips)
+    def clip(self, bounds): self.clips.append(bounds); return True
+    def reassert(self): self.reasserts += 1
+    def release(self): self.releases += 1
+
+
+def test_confine_engages_and_releases_os_clip():
+    clip = MockClipper()
+    c = ConfineController(
+        ConfineConfig(minimon=MiniMonConfig(match="index", index=2)),
+        monitor_source=_fake_monitors, clipper=clip)
+    assert clip.clips == []                 # constructing doesn't clip
+    c.enable()
+    assert len(clip.clips) == 1             # enable clips to the Mini Mon
+    b = clip.clips[0]
+    assert (b.min_x, b.min_y, b.max_x, b.max_y) == (4480, 0, 6400, 1080)
+    c.disable()
+    assert clip.releases == 1               # detach releases the clip
+
+
+def test_refresh_reclips_when_confined():
+    clip = MockClipper()
+    c = ConfineController(
+        ConfineConfig(minimon=MiniMonConfig(match="index", index=2)),
+        monitor_source=_fake_monitors, clipper=clip)
+    c.enable()
+    n = len(clip.clips)
+    c.refresh()                             # a display switch re-resolves geometry
+    assert len(clip.clips) == n + 1         # ...and re-applies the clip
+    c.reassert_clip()
+    assert clip.reasserts == 1
+
+
+def test_reassert_noop_when_not_confined():
+    clip = MockClipper()
+    c = ConfineController(
+        ConfineConfig(minimon=MiniMonConfig(match="index", index=2)),
+        monitor_source=_fake_monitors, clipper=clip)
+    c.reassert_clip()                       # not confined -> nothing happens
+    assert clip.reasserts == 0
+
+
 def _run_all():
     funcs = [v for k, v in sorted(globals().items())
              if k.startswith("test_") and callable(v)]

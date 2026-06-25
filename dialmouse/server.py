@@ -64,11 +64,13 @@ class UdpReceiver:
         max_events_per_sec: int = 5000,
         recv_timeout: float = 0.5,
         logger: Optional[logging.Logger] = None,
+        idle_hook: Optional[Callable[[], None]] = None,
     ) -> None:
         self._core = core
         self._host = "127.0.0.1" if host not in _LOOPBACK else host
         self._port = int(port)
         self._heartbeat = heartbeat
+        self._idle_hook = idle_hook
         self._max_eps = max(1, int(max_events_per_sec))
         self._recv_timeout = float(recv_timeout)
         self._log = logger or get_logger()
@@ -151,6 +153,8 @@ class UdpReceiver:
         while self._running:
             if self._heartbeat:
                 self._heartbeat()  # beat the watchdog every loop (incl. idle).
+            if self._idle_hook:
+                self._idle_hook()  # e.g. re-assert the cursor clip when confined.
             try:
                 data, addr = self._sock.recvfrom(_MAX_DATAGRAM)
             except socket.timeout:

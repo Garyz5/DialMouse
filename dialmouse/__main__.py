@@ -10,6 +10,7 @@ from Companion and drives the cursor. Other actions:
     python -m dialmouse --identify
     python -m dialmouse --set-minimon N
     python -m dialmouse --test [--confine] [--monitor N] [--duration 10]
+    python -m dialmouse --confine-test [--monitor N] [--duration 10]   # confine + HOLD
     python -m dialmouse --display status|extend|duplicate|panic [--dry-run]
     python -m dialmouse --mirror N [--dry-run]      # mirror display N -> Mini Mon
     python -m dialmouse --version
@@ -76,6 +77,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--test", action="store_true",
                    help="self-check: draw a square + click (no network)")
     p.add_argument("--confine", action="store_true", help="with --test: confine to Mini Mon")
+    p.add_argument("--confine-test", action="store_true",
+                   help="confine the cursor to the Mini Mon and HOLD (no square); "
+                        "move your mouse to verify it stays contained")
     p.add_argument("--monitor", type=int, default=None, metavar="N", help="with --test: target monitor N")
     p.add_argument("--loopback-test", action="store_true",
                    help="run the receiver and send it scripted OSC; cursor should move")
@@ -306,6 +310,47 @@ def _cmd_display(logger, config, args) -> int:
     return EXIT_OK if fn() else EXIT_ERROR
 
 
+def _cmd_confine_test(logger, config, watchdog, args) -> int:
+    """Confine the cursor to the Mini Mon and HOLD — no square drawing. Park the
+    cursor onto the Mini Mon, engage the OS-level clip, then idle for the
+    duration so you can move your physical mouse and watch it stay contained."""
+    confine = _resolve_test_confine(config, args.monitor)
+    backend = MouseBackend(logger=logger, region_provider=confine.active_region)
+    try:
+        backend.preflight()
+    except DialMouseInjectionError as exc:
+        logger.error("%s", exc)
+        if exc.guidance:
+            logger.error("How to fix:\n%s", exc.guidance)
+        return EXIT_INJECTION
+
+    if not confine.enable():
+        logger.error("Could not confine: no Mini Mon resolved. Run --identify / --set-minimon.")
+        return EXIT_ERROR
+    target = confine.park_target()
+    if target is not None:
+        backend.move_to(*target)   # start inside the Mini Mon
+
+    duration = max(0.0, args.duration)
+    logger.info("Confined to the Mini Mon. MOVE YOUR MOUSE — it should stay on that "
+                "screen for %.0fs. Ctrl-C to stop early.", duration)
+    deadline = time.monotonic() + duration
+    try:
+        # Re-assert the clip frequently so it survives focus changes, and beat
+        # the watchdog throughout. No motion is injected — this is purely a hold.
+        while time.monotonic() < deadline:
+            confine.reassert_clip()
+            if watchdog:
+                watchdog.beat()
+            time.sleep(0.05)
+    except KeyboardInterrupt:
+        logger.info("Stopped early.")
+    finally:
+        confine.disable()   # release the clip so the cursor is free again
+    logger.info("Confine-hold test complete; cursor released.")
+    return EXIT_OK
+
+
 def _cmd_run_receiver(logger, config, port, watchdog) -> int:
     movement, confine, backend, core, display, feedback = _build_runtime(config, logger)
     try:
@@ -320,7 +365,8 @@ def _cmd_run_receiver(logger, config, port, watchdog) -> int:
     core.publish_state()   # push initial state to Companion if feedback is on
     rx = UdpReceiver(core, host=config.network.host, port=port,
                      heartbeat=(watchdog.beat if watchdog else None),
-                     max_events_per_sec=config.network.max_events_per_sec, logger=logger)
+                     max_events_per_sec=config.network.max_events_per_sec, logger=logger,
+                     idle_hook=core.confine_reassert)
     try:
         rx.open()
     except OSError as exc:
@@ -402,6 +448,9 @@ def main(argv=None) -> int:
                     break
             logger.info("Self-test passed (%d pass(es)). Injection works on this machine.", passes)
             return EXIT_OK
+
+        if args.confine_test:
+            return _cmd_confine_test(logger, config, watchdog, args)
 
         if args.loopback_test:
             return _cmd_loopback_test(logger, config, port, watchdog, args.duration)
