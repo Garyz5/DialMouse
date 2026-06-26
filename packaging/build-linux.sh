@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.."   # repo root
 
 echo "== Installing build dependencies =="
 python3 -m pip install --upgrade pip
-python3 -m pip install -r requirements.txt pyinstaller streamdeck hid
+python3 -m pip install -r requirements.txt pyinstaller streamdeck hid pystray pillow
 
 # Native HIDAPI (offline Direct HID) is optional on Linux: if the system
 # libhidapi-libusb.so is present the spec bundles it; otherwise HID is simply

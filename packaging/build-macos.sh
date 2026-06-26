@@ -12,7 +12,7 @@ cd "$(dirname "$0")/.."   # repo root
 
 echo "== Installing build dependencies =="
 python3 -m pip install --upgrade pip
-python3 -m pip install -r requirements.txt pyinstaller streamdeck hid
+python3 -m pip install -r requirements.txt pyinstaller streamdeck hid pystray pillow
 
 # Native HIDAPI (offline Direct HID). Homebrew installs it as libhidapi.dylib.
 if [ -z "${SKIP_HIDAPI:-}" ]; then

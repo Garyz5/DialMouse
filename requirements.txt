@@ -16,3 +16,9 @@ screeninfo>=0.8.1      # per-monitor enumeration (confinement, added in Step 2)
 # not need these. Bundled into the packaged binary for offline USB use.
 streamdeck>=0.9.5
 hidapi>=0.14.0
+
+# Optional — only for the GUI launcher's system-tray icon. The launcher runs
+# fine without them (minimize just behaves normally). Bundled into the GUI
+# binary for offline use.
+pystray>=0.19
+pillow>=10.0

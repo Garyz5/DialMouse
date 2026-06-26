@@ -44,7 +44,7 @@ Write-Host "== Using Python: $py =="
 
 Write-Host "== Installing build dependencies =="
 & $py -m pip install --upgrade pip;                                      Throw-IfFailed "pip upgrade"
-& $py -m pip install -r requirements.txt pyinstaller streamdeck hidapi;  Throw-IfFailed "pip install"
+& $py -m pip install -r requirements.txt pyinstaller streamdeck hidapi pystray pillow;  Throw-IfFailed "pip install"
 
 # --- stage the native HIDAPI DLL (offline Direct HID) -----------------------
 if (-not (Test-Path "hidapi.dll")) {

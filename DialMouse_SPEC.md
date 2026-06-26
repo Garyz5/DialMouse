@@ -310,7 +310,7 @@ Each step is independently runnable/testable before the next.
 | 5 | Display-control module (extend / mirror-pick / panic) per-OS + return-channel feedback | ✅ built (pending hardware verify) |
 | 6 | Direct HID mode (optional) | ✅ built (pending hardware verify) |
 | 7 | Packaging: PyInstaller per-OS + GitHub Actions; stage helper tools; USB layout | ✅ built (pending hardware verify) |
-| 8 | Docs: full single-/multi-page Companion setup guide + README + importable Companion config if feasible | ☐ |
+| 8 | Docs: Companion setup guide + 3-page importable config | ✅ delivered |
 
 ---
 
@@ -610,3 +610,37 @@ Then **Step 8 — Docs / Companion guide:**
   Start runs the receiver, Show logs streams output, and the Advanced buttons
   (Test, Identify, etc.) work. macOS note: the onefile windowed binary runs, but
   a proper `.app` bundle would be the nicer long-term form there.
+
+- **2026-06-26 — Step 8 (Companion guide + importable config).** Delivered
+  `COMPANION_SETUP.md`: OSC-vs-UDP comparison (recommend Generic OSC), a 5-minute
+  one-dial smoke test, the full per-dial OSC action table, and the QWERTY +
+  Utility 1/2 key build. Then, from the user's own wired export (Companion 4.3.4,
+  schema v12, generic-osc 2.8.2, connection 127.0.0.1:12000 UDP), generated three
+  drop-in page imports (`DialMouse_1_Main`, `_2_Utility1`, `_3_Utility2`): the 6
+  dials preserved verbatim on every page + a full 36-key layer each, wired with
+  the exact `send_int`/`send_string` action schema, role-coloured for readability.
+  Known follow-ups: page-nav (Fn/Main) left for the user's one-click internal
+  "Set surface to page" action; per-monitor mirror-pick dropped by decision
+  (Windows can't cleanly mirror one source onto one display; EXTEND/PANIC via
+  DisplaySwitch remain). Work-check of the user's dials flagged a duplicate X
+  dial, missing right-click/pause, and an inverted-Y choice (left to the user).
+
+- **2026-06-26 — GUI Stop freeze fixed (process-tree kill).** launcher 1.2.
+  Stop took ~5s because the core is a PyInstaller ONEFILE exe: a bootloader
+  parent launches the real receiver as a CHILD, and `proc.terminate()` killed
+  only the parent — the orphaned receiver kept the stdout pipe open, so the GUI
+  waited (looked frozen) until it died on its own. Fix: kill the whole tree —
+  Windows `taskkill /F /T /PID`, POSIX `killpg` (child launched with
+  `start_new_session`). Status shows "Stopping…" immediately. Stop is now instant.
+
+- **2026-06-26 — GUI system tray (minimize-to-tray).** launcher 1.3. Minimizing
+  the launcher hides it to a system-tray icon (pystray + Pillow); the icon's menu
+  has Show / Start-Stop / Quit, and the window X now quits cleanly (kills the
+  receiver tree + stops the tray). **Graceful by design:** if pystray/Pillow
+  aren't bundled, or there's no tray host (common on Linux), `_build_tray_icon`
+  returns None and the app just minimizes normally — verified headless. So the
+  tray is effectively opt-in at build time: building WITHOUT pystray/pillow gives
+  the lean ~12 MB GUI (no tray); WITH them, ~45 MB (Pillow is heavy) and the tray
+  works. GUI spec lists the pystray backends explicitly (`_win32/_darwin/_xorg/
+  _appindicator/_gtk`); build scripts + CI install `pystray pillow`; both the
+  build and headless graceful-degradation were verified in-container.

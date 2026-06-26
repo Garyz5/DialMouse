@@ -26,7 +26,7 @@ import sys
 from typing import List
 
 APP_TITLE = "DialMouse"
-LAUNCHER_VERSION = "1.2"   # 1.2: Stop now kills the process tree (fixes ~5s freeze)
+LAUNCHER_VERSION = "1.3"   # 1.3: minimize-to-system-tray (graceful if unavailable)
 
 # Hide the spawned console child's own window on Windows (its output is piped
 # into our log pane instead).
@@ -107,6 +107,41 @@ ADVANCED_COMMANDS = [
 # --------------------------------------------------------------------------- #
 # Tk UI (constructed only when run as a program).
 # --------------------------------------------------------------------------- #
+
+def _build_tray_icon(on_show, on_toggle, on_quit):
+    """Create a system-tray icon if pystray + Pillow are available, else return
+    None (the app then just minimizes normally). The icon loop runs in a daemon
+    thread; menu callbacks fire from THAT thread, so the callers marshal back to
+    the UI thread themselves (via root.after)."""
+    try:
+        import threading
+        import pystray
+        from PIL import Image, ImageDraw
+    except Exception:
+        return None
+    try:
+        img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        d.ellipse((4, 4, 60, 60), fill=(29, 78, 216, 255))     # blue dial
+        d.ellipse((23, 23, 41, 41), fill=(255, 255, 255, 255)) # white hub
+        menu = pystray.Menu(
+            pystray.MenuItem("Show DialMouse", lambda i, item: on_show(), default=True),
+            pystray.MenuItem("Start / Stop receiver", lambda i, item: on_toggle()),
+            pystray.MenuItem("Quit", lambda i, item: on_quit()),
+        )
+        icon = pystray.Icon("dialmouse", img, "DialMouse", menu)
+
+        def _run():
+            try:
+                icon.run()
+            except Exception:
+                pass
+
+        threading.Thread(target=_run, daemon=True).start()
+        return icon
+    except Exception:
+        return None
+
 
 def _run_gui() -> int:  # pragma: no cover - requires a display
     import queue
@@ -325,14 +360,45 @@ def _run_gui() -> int:  # pragma: no cover - requires a display
             pass
         root.after(100, _drain)
 
-    def on_close() -> None:
-        if state["proc"] is not None:
-            stop()
-            root.after(300, root.destroy)
-        else:
-            root.destroy()
+    # --- system tray: minimize hides to tray; restore/quit from the icon ---
+    tray = None
 
-    root.protocol("WM_DELETE_WINDOW", on_close)
+    def _restore_window() -> None:
+        try:
+            root.deiconify()
+            root.state("normal")
+            root.lift()
+            root.focus_force()
+        except Exception:
+            pass
+
+    def _quit_app() -> None:
+        if state["proc"] is not None:
+            _kill_tree(state["proc"])
+        if tray is not None:
+            try:
+                tray.stop()
+            except Exception:
+                pass
+        root.destroy()
+
+    if not os.environ.get("DIALMOUSE_GUI_SELFTEST"):
+        tray = _build_tray_icon(
+            on_show=lambda: root.after(0, _restore_window),
+            on_toggle=lambda: root.after(0, on_start),
+            on_quit=lambda: root.after(0, _quit_app),
+        )
+
+    def _on_unmap(event=None) -> None:
+        # Minimize -> hide to tray (only if the tray actually came up).
+        if tray is not None and event is not None and event.widget is root:
+            if root.state() == "iconic":
+                root.after(10, root.withdraw)
+
+    if tray is not None:
+        root.bind("<Unmap>", _on_unmap)
+
+    root.protocol("WM_DELETE_WINDOW", _quit_app)
     root.after(100, _drain)
     # Test hook: build the whole UI then exit, for headless/CI construction checks.
     if os.environ.get("DIALMOUSE_GUI_SELFTEST"):

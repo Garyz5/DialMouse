@@ -1,0 +1,60 @@
+{
+    "version": 12,
+    "type": "page",
+    "companionBuild": "4.3.4+9244-stable-c14e5e3334",
+    "page": {
+        "id": "DialMouse_Generated_Page",
+        "name": "DialMouse_Auto",
+        "controls": {
+            "0": {
+                "0": {
+                    "type": "button",
+                    "style": {
+                        "text": "Start Dial",
+                        "textExpression": false,
+                        "size": "auto",
+                        "png64": null,
+                        "alignment": "center:center",
+                        "pngalignment": "center:center",
+                        "color": 16777215,
+                        "bgcolor": 0,
+                        "show_topbar": "default"
+                    },
+                    "options": {
+                        "stepProgression": "auto",
+                        "stepExpression": "",
+                        "rotaryActions": false
+                    },
+                    "feedbacks": [],
+                    "steps": {
+                        "0": {
+                            "action_sets": {
+                                "down": [
+                                    {
+                                        "action": "generic:osc",
+                                        "options": {
+                                            "host": "127.0.0.1",
+                                            "port": 12000,
+                                            "path": "/dialmouse/start",
+                                            "args": [
+                                                {
+                                                    "type": "i",
+                                                    "value": 1
+                                                }
+                                            ]
+                                        }
+                                    }
+                                ],
+                                "up": []
+                            },
+                            "options": {
+                                "runWhileHeld": []
+                            }
+                        }
+                    },
+                    "localVariables": []
+                }
+            }
+        }
+    }
+}
