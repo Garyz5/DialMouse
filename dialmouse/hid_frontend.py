@@ -102,17 +102,21 @@ class HidFrontend:
 
         if not decks:
             raise HidUnavailable(
-                "No Stream Deck found. Is it plugged in, and is Companion or the "
-                "Elgato app closed? (HID access is exclusive.)",
-                guidance=_hid_guidance(self._os))
+                "No Stream Deck found.",
+                guidance="Plug the deck into the USB hub, and close Companion / "
+                         "the Elgato Stream Deck app — HID access is exclusive — "
+                         "then retry. (The HID backend loaded fine; there's just "
+                         "no free deck to open.)")
 
         deck = decks[0]
         try:
             deck.open()
         except Exception as exc:
             raise HidUnavailable(
-                f"Could not open the deck — another app may have it ({exc}).",
-                guidance=_hid_guidance(self._os)) from exc
+                f"Could not open the deck ({exc}).",
+                guidance="Another app likely has it open — close Companion / the "
+                         "Elgato Stream Deck app (HID access is exclusive) and "
+                         "retry.") from exc
 
         self._deck = deck
         try:

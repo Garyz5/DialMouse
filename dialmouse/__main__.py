@@ -360,6 +360,19 @@ def _cmd_confine_test(logger, config, watchdog, args) -> int:
     return EXIT_OK
 
 
+def _primary_center(logger):
+    """Centre of the primary monitor (fallback: first monitor). Returns None if
+    enumeration fails, in which case the caller draws from the current cursor."""
+    try:
+        mons = enumerate_monitors()
+        if not mons:
+            return None
+        prim = next((m for m in mons if m.is_primary), mons[0])
+        return prim.center()
+    except Exception:
+        return None
+
+
 def _cmd_run_hid(logger, config, watchdog, observe_only=False) -> int:
     """Direct HID mode: read the deck's dials directly and drive the cursor.
     With observe_only (--hid-test), print events without injecting anything."""
@@ -497,7 +510,14 @@ def main(argv=None) -> int:
             if args.confine:
                 confine.enable()
             backend = MouseBackend(logger=logger, region_provider=confine.active_region)
-            start_at = confine.park_target() if (confine.is_confined or args.monitor is not None) else None
+            if confine.is_confined or args.monitor is not None:
+                start_at = confine.park_target()
+            else:
+                # Park at the primary monitor's centre first so the relative
+                # square is always fully visible — otherwise, if the cursor
+                # happens to start in a screen corner, the legs clamp against the
+                # desktop edge and little or nothing appears to draw.
+                start_at = _primary_center(logger)
             deadline = time.monotonic() + max(0.0, args.duration)
             passes = 0
             while True:

@@ -15,7 +15,7 @@ Later steps add the config system, the OSC/UDP receiver (Receiver mode), the
 control surface, optional Direct HID mode, packaging, and docs.
 """
 
-__version__ = "0.6.0"  # Step 6: Direct HID mode (read the deck directly)
+__version__ = "0.6.1"  # Step 7 + first-run fixes (test parks at primary center; accurate HID hint)
 __app_name__ = "DialMouse"
 
 # Process exit codes. Stable across the whole project so launch scripts and the
