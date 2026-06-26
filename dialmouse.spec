@@ -80,7 +80,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="dialmouse",
+    name="dialmouse-core",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

@@ -17,13 +17,13 @@ jobs:
         include:
           - os: windows-latest
             artifact: dialmouse-win.exe
-            outname: dialmouse.exe
+            outname: dialmouse-core.exe
           - os: ubuntu-latest
             artifact: dialmouse-linux
-            outname: dialmouse
+            outname: dialmouse-core
           - os: macos-latest
             artifact: dialmouse-macos
-            outname: dialmouse
+            outname: dialmouse-core
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

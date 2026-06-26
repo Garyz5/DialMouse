@@ -644,3 +644,18 @@ Then **Step 8 — Docs / Companion guide:**
   works. GUI spec lists the pystray backends explicitly (`_win32/_darwin/_xorg/
   _appindicator/_gtk`); build scripts + CI install `pystray pillow`; both the
   build and headless graceful-degradation were verified in-container.
+
+- **2026-06-26 — Build bug fixed: core/GUI exe name collision (Windows).** The
+  GUI's "Start launches another window" regression was NOT the launcher — it was
+  the build. The core spec built `dist\dialmouse.exe` and the GUI spec built
+  `dist\DialMouse.exe`; on Windows's case-INSENSITIVE filesystem those are the
+  SAME file, so the GUI build overwrote the core, and `bin\dialmouse-win.exe`
+  ended up being a copy of the GUI. The launcher dutifully ran it → another GUI
+  window. Fix: renamed the core EXE output to **`dialmouse-core`** (spec
+  `name="dialmouse-core"`) so it can never collide with `DialMouse`; updated
+  build-windows.ps1 / build-linux.sh / build-macos.sh and the CI matrix to copy
+  `dist/dialmouse-core[.exe]` into `bin/dialmouse-<os>`. Verified in-container:
+  the two binaries are now distinct (different md5), and `dialmouse-core
+  --version` returns the core version (a GUI binary would just open a window).
+  The build's "Verifying built binary" step now prints `DialMouse 0.7.1`, which
+  is the at-a-glance confirmation the fix is in.

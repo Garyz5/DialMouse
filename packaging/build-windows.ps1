@@ -58,14 +58,14 @@ if (-not (Test-Path "hidapi.dll")) {
 
 # --- build (use the module, not the .exe shim) ------------------------------
 Write-Host "== Building one-file binary =="
-if (Test-Path "dist\dialmouse.exe") { Remove-Item "dist\dialmouse.exe" -Force }
+if (Test-Path "dist\dialmouse-core.exe") { Remove-Item "dist\dialmouse-core.exe" -Force }
 & $py -m PyInstaller --clean --noconfirm dialmouse.spec;                 Throw-IfFailed "PyInstaller"
 
-if (-not (Test-Path "dist\dialmouse.exe")) {
-    throw "Build reported success but dist\dialmouse.exe is missing - aborting (refusing to ship a stale binary)."
+if (-not (Test-Path "dist\dialmouse-core.exe")) {
+    throw "Build reported success but dist\dialmouse-core.exe is missing - aborting (refusing to ship a stale binary)."
 }
-$built = Get-Item "dist\dialmouse.exe"
-Write-Host "== Built dist\dialmouse.exe ($($built.Length) bytes) =="
+$built = Get-Item "dist\dialmouse-core.exe"
+Write-Host "== Built dist\dialmouse-core.exe ($($built.Length) bytes) =="
 
 # --- build the GUI launcher (windowed, no console) --------------------------
 Write-Host "== Building GUI launcher =="
@@ -80,7 +80,7 @@ Write-Host "== Assembling USB layout =="
 $usb = "dist\USB\DialMouse"
 Remove-Item -Recurse -Force $usb -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path "$usb\bin", "$usb\tools" | Out-Null
-Copy-Item "dist\dialmouse.exe"               "$usb\bin\dialmouse-win.exe" -Force
+Copy-Item "dist\dialmouse-core.exe"               "$usb\bin\dialmouse-win.exe" -Force
 Copy-Item "dist\DialMouse.exe"               "$usb\DialMouse.exe"         -Force
 Copy-Item "config.example.json"              "$usb\config.example.json"   -Force
 Copy-Item "packaging\usb\start-windows.bat"  "$usb\start-windows.bat"     -Force
