@@ -26,7 +26,7 @@ import sys
 from typing import List
 
 APP_TITLE = "DialMouse"
-LAUNCHER_VERSION = "1.1"   # bump when the launcher itself changes (shown in title)
+LAUNCHER_VERSION = "1.2"   # 1.2: Stop now kills the process tree (fixes ~5s freeze)
 
 # Hide the spawned console child's own window on Windows (its output is piped
 # into our log pane instead).
@@ -237,7 +237,10 @@ def _run_gui() -> int:  # pragma: no cover - requires a display
         try:
             proc = subprocess.Popen(
                 cmd, cwd=base, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, bufsize=1, creationflags=creation)
+                text=True, bufsize=1, creationflags=creation,
+                # POSIX: own session so we can signal the whole group (the onefile
+                # bootloader + its child app). Windows uses taskkill /T instead.
+                start_new_session=(platform.system() != "Windows"))
         except Exception as exc:
             messagebox.showerror(APP_TITLE, f"Could not start DialMouse:\n{exc}")
             return
@@ -245,22 +248,39 @@ def _run_gui() -> int:  # pragma: no cover - requires a display
         _set_running(True, " ".join(args) if args else "receiver")
         threading.Thread(target=_reader, args=(proc,), daemon=True).start()
 
+    def _kill_tree(proc) -> None:
+        """Kill the whole process tree, not just the parent. The core is a
+        PyInstaller onefile exe: a bootloader parent launches the real app as a
+        CHILD, so terminating only the parent leaves the receiver running (and
+        holding the output pipe) for ~5s — the 'frozen Stop' symptom."""
+        if proc is None or proc.poll() is not None:
+            return
+        try:
+            if platform.system() == "Windows":
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                               creationflags=_CREATE_NO_WINDOW,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                import os as _os
+                import signal as _sig
+                try:
+                    _os.killpg(_os.getpgid(proc.pid), _sig.SIGTERM)
+                except Exception:
+                    proc.terminate()
+        except Exception:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+
     def stop() -> None:
         proc = state["proc"]
         if proc is None:
             return
-        try:
-            proc.terminate()
-        except Exception:
-            pass
-
-        def _force_kill():
-            if proc.poll() is None:
-                try:
-                    proc.kill()
-                except Exception:
-                    pass
-        root.after(3000, _force_kill)
+        status.set("Stopping…")          # immediate feedback — no perceived freeze
+        _kill_tree(proc)                  # kills bootloader + the receiver child
+        # Backstop: if anything survived, force it again shortly.
+        root.after(1500, lambda: _kill_tree(proc))
 
     def on_start() -> None:
         if state["proc"] is None:
