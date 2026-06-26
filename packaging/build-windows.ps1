@@ -67,12 +67,21 @@ if (-not (Test-Path "dist\dialmouse.exe")) {
 $built = Get-Item "dist\dialmouse.exe"
 Write-Host "== Built dist\dialmouse.exe ($($built.Length) bytes) =="
 
+# --- build the GUI launcher (windowed, no console) --------------------------
+Write-Host "== Building GUI launcher =="
+if (Test-Path "dist\DialMouse.exe") { Remove-Item "dist\DialMouse.exe" -Force }
+& $py -m PyInstaller --clean --noconfirm dialmouse-gui.spec;             Throw-IfFailed "PyInstaller (GUI)"
+if (-not (Test-Path "dist\DialMouse.exe")) {
+    throw "GUI build reported success but dist\DialMouse.exe is missing - aborting."
+}
+
 # --- assemble USB layout ----------------------------------------------------
 Write-Host "== Assembling USB layout =="
 $usb = "dist\USB\DialMouse"
 Remove-Item -Recurse -Force $usb -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path "$usb\bin", "$usb\tools" | Out-Null
 Copy-Item "dist\dialmouse.exe"               "$usb\bin\dialmouse-win.exe" -Force
+Copy-Item "dist\DialMouse.exe"               "$usb\DialMouse.exe"         -Force
 Copy-Item "config.example.json"              "$usb\config.example.json"   -Force
 Copy-Item "packaging\usb\start-windows.bat"  "$usb\start-windows.bat"     -Force
 Copy-Item "README.md"                        "$usb\README.md"             -Force

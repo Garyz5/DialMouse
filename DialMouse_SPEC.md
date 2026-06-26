@@ -11,7 +11,7 @@ build log.
 > The Project stores it; I rewrite it on request. At the end of each build step
 > I update the Build Log and hand you a fresh copy.
 
-- **Document version:** v0.11 (Step 7 built: PyInstaller packaging + offline USB layout; pending hardware verify)
+- **Document version:** v0.12 (Step 7 + GUI launcher: windowed front-end that spawns the core; pending hardware verify)
 - **Last updated:** 2026-06-24
 - **Source repository:** https://github.com/Garyz5/DialMouse — clone this at the
   start of each session so the code is in front of us. The verified source is the
@@ -579,3 +579,34 @@ Then **Step 8 — Docs / Companion guide:**
   machine/account with NO Python and NO network, and run the README's 5-step
   offline acceptance test (`--test`, receiver, Companion dials, then `--hid-test`
   with the bundled DLL). That confirms the offline/USB requirement on real metal.
+
+- **2026-06-25 — GUI launcher added (packaging UX).** v0.7.0. A friendly,
+  no-console front door so the `.bat` (which "freaks people out") isn't the face
+  of the tool. It does NOT reimplement anything: it builds a command line and
+  spawns the verified core binary under `bin/`, streaming its log into a pane —
+  the tested core is untouched.
+  - **`launcher/gui.py`** (tkinter, stdlib-only — no third-party deps). Simple
+    view: a Start/Stop button (runs the receiver), a status line, a "Show logs"
+    toggle (console hidden by default; the log pane is the reachable-if-broken
+    surface). Advanced view (collapsible): fixed buttons (Test, Identify, Set
+    Mini Mon…, Confine test, HID test, Loopback) + a free-text **Extra arguments**
+    box + Run + "Edit config.json". One child process at a time; Stop terminates
+    it (then force-kills after 3s); the child runs with CREATE_NO_WINDOW on
+    Windows so no stray console appears. Non-UI helpers (binary resolution,
+    command building, arg parsing) are factored out and unit-tested.
+  - **`dialmouse-gui.spec`** — separate one-file, **windowed** (`console=False`)
+    binary named `DialMouse(.exe)`, placed at the USB root. ~12 MB (stdlib only).
+  - Build scripts + CI build BOTH binaries; USB layout now has `DialMouse(.exe)`
+    at the root and `bin/dialmouse-<os>` underneath. README rewritten to lead with
+    the GUI; `start-*` scripts kept as fallback. `tests/test_launcher.py` (5
+    tests) → 96 logic tests total.
+  - **In-container verification:** both binaries build; the GUI binary launches
+    from the USB root, seeds `config.json` from the example on first run, and
+    resolves the core under `bin/`. Rendered under Xvfb: the simple view shows
+    Start + Show logs + Advanced as intended; advanced/logs panels construct
+    without error.
+  **Pending hardware verification:** on Windows, build with `build-windows.ps1`,
+  then double-click `DialMouse.exe` — confirm the window opens with no console,
+  Start runs the receiver, Show logs streams output, and the Advanced buttons
+  (Test, Identify, etc.) work. macOS note: the onefile windowed binary runs, but
+  a proper `.app` bundle would be the nicer long-term form there.

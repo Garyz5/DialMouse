@@ -73,14 +73,22 @@ jobs:
       - name: Build binary
         run: pyinstaller --clean --noconfirm dialmouse.spec
 
-      - name: Rename artifact
+      - name: Build GUI launcher
+        run: pyinstaller --clean --noconfirm dialmouse-gui.spec
+
+      - name: Stage artifacts
         shell: bash
         run: |
           mkdir -p out
           cp "dist/${{ matrix.outname }}" "out/${{ matrix.artifact }}"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp "dist/DialMouse.exe" "out/DialMouse.exe"
+          else
+            cp "dist/DialMouse" "out/DialMouse-${{ runner.os }}"
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: out/${{ matrix.artifact }}
+          name: dialmouse-${{ runner.os }}
+          path: out/*
           if-no-files-found: error

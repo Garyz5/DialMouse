@@ -19,6 +19,8 @@ done
 
 echo "== Building one-file binary =="
 pyinstaller --clean --noconfirm dialmouse.spec
+echo "== Building GUI launcher =="
+pyinstaller --clean --noconfirm dialmouse-gui.spec
 
 echo "== Assembling USB layout =="
 usb="dist/USB/DialMouse"
@@ -26,6 +28,8 @@ rm -rf "$usb"
 mkdir -p "$usb/bin" "$usb/tools"
 cp dist/dialmouse "$usb/bin/dialmouse-linux"
 chmod +x "$usb/bin/dialmouse-linux"
+cp dist/DialMouse "$usb/DialMouse"
+chmod +x "$usb/DialMouse"
 cp config.example.json             "$usb/config.example.json"
 cp packaging/usb/start-linux.sh    "$usb/start-linux.sh"
 chmod +x "$usb/start-linux.sh"

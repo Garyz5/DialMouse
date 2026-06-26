@@ -17,19 +17,23 @@ Two ways to drive it:
 
 ## Quick start (from the USB drive)
 
-Each OS has its own self-contained binary under `bin/`. Launch the matching
-script from the `DialMouse/` folder:
+**Easiest — the GUI launcher.** Double-click **`DialMouse`** (`DialMouse.exe` on
+Windows). A small window opens with a **Start** button that runs the receiver —
+no console, no flags. Need more? Click **Advanced** for one-click Test, Identify,
+Set Mini Mon, Confine test, HID test, Loopback, and a free-text arguments box;
+click **Show logs** to watch what the core is doing. The launcher just runs the
+core binary under `bin/` — it adds nothing to the tested core.
 
-- **Windows:** double-click `start-windows.bat` (or run it with args).
-- **macOS:** double-click `start-macos.command`.
-- **Linux:** run `./start-linux.sh`.
-
-With no arguments this runs the **receiver** (Receiver mode). Pass arguments to
-the launcher to do other things, e.g. `start-windows.bat --test`.
+**Or the plain launch scripts** (fallback / headless / scripting): run the
+matching `start-<os>` script from the `DialMouse/` folder. With no arguments it
+runs the receiver; pass arguments to do other things, e.g. `start-windows.bat
+--test`.
 
 First launch creates a personal `config.json` from `config.example.json`.
 
 ### Verify injection before wiring anything
+
+In the GUI: **Advanced → Test (square + click)**. Or from a script:
 
 ```
 start-windows.bat --test
@@ -39,6 +43,9 @@ The cursor draws a small square and clicks once — proof that OS-level input
 injection works on this machine. (Runs ~10s; `--duration 0` for a single pass.)
 
 ### Pick your Mini Mon (the screen on the deck)
+
+GUI: **Advanced → Identify monitors**, note the number on the deck screen, then
+**Advanced → Set Mini Mon…**. Or from a script:
 
 ```
 start-windows.bat --identify        # flashes a number on every display
@@ -52,14 +59,15 @@ start-windows.bat --display status  # confirm the right screen is tagged
 
 ```
 DialMouse/
+  DialMouse(.exe)            (GUI launcher — double-click this)
   bin/
-    dialmouse-win.exe        (Windows)
-    dialmouse-macos          (macOS, +x)
-    dialmouse-linux          (Linux x86_64, +x)
+    dialmouse-win.exe        (Windows core)
+    dialmouse-macos          (macOS core, +x)
+    dialmouse-linux          (Linux x86_64 core, +x)
   tools/                     (optional helper tools, e.g. MultiMonitorTool)
   config.example.json        (documented default)
   config.json                (your settings — created on first run, not shipped)
-  start-windows.bat
+  start-windows.bat          (plain launcher / fallback)
   start-macos.command
   start-linux.sh
   README.md
