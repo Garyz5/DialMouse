@@ -26,6 +26,7 @@ import sys
 from typing import List
 
 APP_TITLE = "DialMouse"
+LAUNCHER_VERSION = "1.1"   # bump when the launcher itself changes (shown in title)
 
 # Hide the spawned console child's own window on Windows (its output is piped
 # into our log pane instead).
@@ -53,16 +54,28 @@ def core_binary_name(system: str | None = None) -> str:
     }.get(system, "dialmouse-linux")
 
 
-def resolve_core_command(base: str, system: str | None = None,
-                         exists=os.path.exists) -> List[str]:
-    """The command prefix that runs the core. Prefers the packaged binary under
-    bin/ (or beside the launcher); falls back to ``python -m dialmouse`` for
-    source/dev use so the GUI is runnable before anything is packaged."""
+def core_candidates(base: str, system: str | None = None) -> List[str]:
+    """Where the core binary might live, in priority order."""
     name = core_binary_name(system)
-    for candidate in (os.path.join(base, "bin", name), os.path.join(base, name)):
+    return [os.path.join(base, "bin", name), os.path.join(base, name)]
+
+
+def resolve_core_command(base: str, system: str | None = None,
+                         exists=os.path.exists, frozen: bool | None = None):
+    """The command prefix that runs the core, or None if it can't be found.
+
+    Prefers the packaged binary under bin/ (or beside the launcher). Only when
+    running from SOURCE does it fall back to ``python -m dialmouse`` — never when
+    frozen, because there ``sys.executable`` is THIS launcher, and relaunching it
+    would just open another GUI window instead of running the core."""
+    if frozen is None:
+        frozen = bool(getattr(sys, "frozen", False))
+    for candidate in core_candidates(base, system):
         if exists(candidate):
             return [candidate]
-    return [sys.executable, "-m", "dialmouse"]
+    if not frozen:
+        return [sys.executable, "-m", "dialmouse"]
+    return None
 
 
 def build_command(core_cmd: List[str], args: List[str]) -> List[str]:
@@ -105,6 +118,7 @@ def _run_gui() -> int:  # pragma: no cover - requires a display
 
     base = base_dir()
     core_cmd = resolve_core_command(base)
+    core_missing = core_cmd is None
 
     # First run: seed a personal config.json from the shipped example.
     cfg, example = os.path.join(base, "config.json"), os.path.join(base, "config.example.json")
@@ -115,7 +129,7 @@ def _run_gui() -> int:  # pragma: no cover - requires a display
             pass
 
     root = tk.Tk()
-    root.title(APP_TITLE)
+    root.title(f"{APP_TITLE}  ·  launcher {LAUNCHER_VERSION}")
     root.minsize(420, 170)
 
     state = {"proc": None, "advanced": False, "logs": False}
@@ -126,6 +140,8 @@ def _run_gui() -> int:  # pragma: no cover - requires a display
     main.pack(fill="both", expand=True)
 
     status = tk.StringVar(value="Idle — press Start to run the receiver.")
+    if core_missing:
+        status.set("⚠ Core binary not found — run DialMouse from its USB folder.")
     ttk.Label(main, textvariable=status, font=("", 10)).pack(anchor="w", pady=(0, 8))
 
     row = ttk.Frame(main)
@@ -197,6 +213,14 @@ def _run_gui() -> int:  # pragma: no cover - requires a display
             out_q.put(None)  # sentinel: process output ended
 
     def launch(args, prompt) -> None:
+        if core_missing:
+            messagebox.showerror(
+                APP_TITLE,
+                "Could not find the DialMouse core binary.\n\nExpected at:\n  "
+                + "\n  ".join(core_candidates(base))
+                + "\n\nMake sure you're running DialMouse from the folder that "
+                  "contains the bin\\ directory.")
+            return
         if state["proc"] is not None:
             messagebox.showinfo(APP_TITLE, "Something is already running. Press Stop first.")
             return

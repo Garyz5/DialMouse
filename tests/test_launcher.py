@@ -37,8 +37,22 @@ def test_resolve_prefers_bin_then_root():
 
 
 def test_resolve_falls_back_to_module():
-    cmd = resolve_core_command("/nowhere", "Linux", exists=lambda p: False)
-    assert cmd[-2:] == ["-m", "dialmouse"]   # python -m dialmouse
+    cmd = resolve_core_command("/nowhere", "Linux", exists=lambda p: False, frozen=False)
+    assert cmd[-2:] == ["-m", "dialmouse"]   # python -m dialmouse (source only)
+
+
+def test_resolve_returns_none_when_frozen_and_missing():
+    # The bug fix: when frozen, NEVER fall back to sys.executable (== the GUI),
+    # which would just relaunch the launcher. Must return None instead.
+    cmd = resolve_core_command("/nowhere", "Windows", exists=lambda p: False, frozen=True)
+    assert cmd is None
+
+
+def test_resolve_finds_core_when_frozen():
+    base = "/usb/DialMouse"
+    binpath = base + "/bin/dialmouse-win.exe"
+    cmd = resolve_core_command(base, "Windows", exists=lambda p: p == binpath, frozen=True)
+    assert cmd == [binpath]
 
 
 def test_build_command_appends_args():

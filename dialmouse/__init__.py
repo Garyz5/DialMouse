@@ -15,7 +15,7 @@ Later steps add the config system, the OSC/UDP receiver (Receiver mode), the
 control surface, optional Direct HID mode, packaging, and docs.
 """
 
-__version__ = "0.7.0"  # GUI launcher added (windowed front-end that spawns the core)
+__version__ = "0.7.1"  # GUI launcher fix: never relaunch self when frozen (core-not-found bug)
 __app_name__ = "DialMouse"
 
 # Process exit codes. Stable across the whole project so launch scripts and the
